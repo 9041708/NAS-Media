@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  web:
+    image: php:8.1-apache
+    container_name: nas-media-web
+    ports:
+      - "8908:80"
+    volumes:
+      - .:/var/www/html
+      - /volume1/video:/nas/video:ro
+      - /volume1/movies:/nas/movies:ro
+      - /volume1/tv:/nas/tv:ro
+    depends_on:
+      - db
+    environment:
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_NAME=nas_media
+      - DB_USER=nasmedia
+      - DB_PASS=nasmedia123
+    restart: unless-stopped
+    restart: unless-stopped
+
+  db:
+    image: mysql:8.0
+    container_name: nas-media-db
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: nas_media
+      MYSQL_USER: nasmedia
+      MYSQL_PASSWORD: nasmedia123
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./database.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+
+volumes:
+  db_data:

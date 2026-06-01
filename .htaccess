@@ -1,0 +1,13 @@
+RewriteEngine On
+RewriteBase /
+
+# 允许访问静态资源和PHP文件
+RewriteRule ^assets/ - [L]
+RewriteRule ^cache/ - [L]
+RewriteRule ^api/ - [L]
+RewriteRule ^admin/ - [L]
+
+# 隐藏 .php 后缀（可选，不影响直接访问）
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.+)$ $1.php [L,QSA]
