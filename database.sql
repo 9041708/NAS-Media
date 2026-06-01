@@ -32,6 +32,7 @@ CREATE TABLE `libraries` (
     `path` varchar(1024) NOT NULL,
     `type` enum('movie','tv','other') NOT NULL DEFAULT 'movie',
     `enabled` tinyint(1) NOT NULL DEFAULT 1,
+    `sort_order` int(11) NOT NULL DEFAULT 0,
     `last_scan` timestamp NULL DEFAULT NULL,
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`)

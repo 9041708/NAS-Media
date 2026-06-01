@@ -171,6 +171,22 @@
     font-size: 16px;
     font-weight: 500;
     margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.lib-order-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
 }
 .library-card .lib-path {
     font-size: 13px;
@@ -246,6 +262,150 @@
 .meta-actions {
     display: flex;
     gap: 6px;
+}
+
+/* 元数据树形视图 */
+.meta-tree-lib {
+    margin-bottom: 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: rgba(255,255,255,0.02);
+}
+.meta-tree-node {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: background 0.15s;
+    font-size: 14px;
+    color: var(--text-primary);
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    user-select: none;
+}
+.meta-tree-node:hover {
+    background: rgba(255,255,255,0.05);
+}
+.meta-tree-root {
+    background: rgba(255,255,255,0.03);
+    font-weight: 600;
+    font-size: 15px;
+    padding: 12px 14px;
+}
+.meta-tree-arrow {
+    width: 16px;
+    text-align: center;
+    font-size: 10px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+.meta-tree-icon {
+    flex-shrink: 0;
+}
+.meta-tree-label {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.meta-tree-year {
+    color: var(--text-muted);
+    font-size: 12px;
+    flex-shrink: 0;
+}
+.meta-tree-badge {
+    background: rgba(255,255,255,0.08);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+.meta-tree-vip {
+    background: rgba(229,9,20,0.2);
+    color: #e50914;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    flex-shrink: 0;
+}
+.meta-tree-count {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+.meta-tree-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+.meta-tree-poster {
+    width: 32px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+.meta-tree-children {
+    border-left: 2px solid var(--border);
+    margin-left: 22px;
+    padding-left: 8px;
+}
+.meta-tree-season {
+    padding: 8px 14px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+.meta-tree-files {
+    padding: 0;
+}
+.meta-tree-file {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px 6px 24px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    border-bottom: 1px solid rgba(255,255,255,0.02);
+    transition: background 0.1s;
+}
+.meta-tree-file:hover {
+    background: rgba(255,255,255,0.03);
+}
+.meta-tree-ep {
+    background: var(--accent);
+    color: #fff;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    flex-shrink: 0;
+    min-width: 36px;
+    text-align: center;
+}
+.meta-tree-file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.meta-tree-file-info {
+    color: var(--text-muted);
+    font-size: 11px;
+    margin-left: auto;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.meta-unmatched {
+    color: #f59e0b;
+}
+.btn-xs {
+    padding: 3px 8px;
+    font-size: 11px;
+    border-radius: 4px;
 }
 
 /* 表单 */

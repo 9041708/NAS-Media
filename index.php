@@ -8,6 +8,8 @@ require_once __DIR__ . '/includes/session.php';
 $siteName = getSetting('site_name', 'NAS影库');
 $user = auth()->getUser();
 
+$libraries = db()->fetchAll('SELECT * FROM libraries ORDER BY COALESCE(sort_order, 0) ASC, name ASC');
+
 $recentHistory = [];
 if ($user) {
     $recentHistory = db()->fetchAll(
@@ -38,9 +40,10 @@ if ($user) {
         <div class="nav-left">
             <a href="/index.php" class="logo"><img src="/live_icon_cut.png" alt="<?= e($siteName) ?>" height="32"></a>
             <div class="nav-links">
-                <a href="/index.php" class="active" data-section="all">全部</a>
-                <a href="#" data-section="movie">电影</a>
-                <a href="#" data-section="tv">剧集</a>
+                <a href="#" class="active" data-section="all" data-lib-id="0">全部</a>
+                <?php foreach ($libraries as $lib): ?>
+                    <a href="#" data-section="library" data-lib-id="<?= $lib['id'] ?>"><?= e($lib['name']) ?></a>
+                <?php endforeach; ?>
                 <a href="#" data-section="favorites">收藏</a>
                 <a href="#" data-section="collections">合集</a>
             </div>

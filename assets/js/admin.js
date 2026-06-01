@@ -149,10 +149,13 @@
                 list.innerHTML = '<div class="empty-state"><h3>暂无媒体库</h3><p>点击"添加媒体库"开始</p></div>';
                 return;
             }
-            list.innerHTML = libs.map(lib => `
+            list.innerHTML = libs.map((lib, idx) => `
                 <div class="library-card" data-id="${lib.id}">
                     <div class="lib-info">
-                        <div class="lib-name">${escHtml(lib.name)}</div>
+                        <div class="lib-name">
+                            <span class="lib-order-badge" title="拖拽排序">${idx + 1}</span>
+                            ${escHtml(lib.name)}
+                        </div>
                         <div class="lib-path">${escHtml(lib.path)}</div>
                         <div class="lib-meta">
                             <span>类型: ${lib.type === 'movie' ? '电影' : lib.type === 'tv' ? '剧集' : '其他'}</span>
@@ -161,11 +164,24 @@
                         </div>
                     </div>
                     <div class="lib-actions">
+                        <button class="btn btn-xs btn-outline move-up-btn" data-id="${lib.id}" title="上移" ${idx === 0 ? 'disabled' : ''}>▲</button>
+                        <button class="btn btn-xs btn-outline move-down-btn" data-id="${lib.id}" title="下移" ${idx === libs.length - 1 ? 'disabled' : ''}>▼</button>
                         <button class="btn btn-sm btn-primary scan-lib-btn" data-id="${lib.id}">扫描</button>
                         <button class="btn btn-sm btn-outline delete-lib-btn" data-id="${lib.id}">删除</button>
                     </div>
                 </div>
             `).join('');
+
+            $$('.move-up-btn').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    await reorderLibrary(parseInt(btn.dataset.id), 'up');
+                });
+            });
+            $$('.move-down-btn').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    await reorderLibrary(parseInt(btn.dataset.id), 'down');
+                });
+            });
 
             $$('.scan-lib-btn').forEach(btn => {
                 btn.addEventListener('click', () => scanLibrary(btn.dataset.id));
@@ -177,6 +193,43 @@
             console.error('加载媒体库失败:', e);
             const list = $('#libraryList');
             if (list) list.innerHTML = '<div class="error">加载失败: ' + escHtml(e.message) + '</div>';
+        }
+    }
+
+    async function reorderLibrary(libId, direction) {
+        try {
+            const res = await fetch('/api/scan.php?action=list_libraries');
+            const libs = await res.json();
+            if (!Array.isArray(libs)) return;
+
+            const idx = libs.findIndex(l => parseInt(l.id) === libId);
+            if (idx < 0) return;
+            const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+            if (swapIdx < 0 || swapIdx >= libs.length) return;
+
+            for (let i = 0; i < libs.length; i++) {
+                libs[i].sort_order = i;
+            }
+
+            const swap = libs[swapIdx];
+            const target = libs[idx];
+            const temp = target.sort_order;
+            target.sort_order = swap.sort_order;
+            swap.sort_order = temp;
+
+            const orders = [
+                { id: parseInt(target.id), order: target.sort_order },
+                { id: parseInt(swap.id), order: swap.sort_order },
+            ];
+
+            await api('/api/scan.php?action=reorder_libraries', {
+                method: 'POST',
+                body: JSON.stringify({ orders }),
+            });
+            loadLibraries();
+        } catch (e) {
+            console.error('排序失败:', e);
+            toast('排序失败', 'error');
         }
     }
 
@@ -347,75 +400,236 @@
         }
     }
 
-    // Metadata Management
-    async function loadMetadata(search = '', type = '') {
+    // ===== 元数据管理（树形结构） =====
+    let metaData = null;
+    let metaExpanded = {};
+    let metaShowingUnmatched = false;
+
+    async function loadMetadataTree(search = '', libType = '') {
         try {
-            let url = '/api/media.php?action=metadata_list';
+            $('#metadataTree').innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>加载中...</p></div>';
+            metaShowingUnmatched = false;
+            let url = '/api/media.php?action=media_tree';
             if (search) url += '&search=' + encodeURIComponent(search);
-            if (type) url += '&type=' + encodeURIComponent(type);
-            const items = await api(url);
-            const list = $('#metadataList');
-            if (!items || items.length === 0) {
-                list.innerHTML = '<div class="empty-state"><h3>没有匹配的媒体</h3><p>请先扫描媒体库以获取元数据</p></div>';
+            if (libType) url += '&lib_type=' + encodeURIComponent(libType);
+            metaData = await api(url);
+            if (!metaData || metaData.length === 0 || metaData.every(l => l.children.length === 0 && l.unmatched.length === 0)) {
+                $('#metadataTree').innerHTML = '<div class="empty-state"><h3>暂无媒体数据</h3><p>请先在"扫描管理"中扫描媒体库以获取元数据，或点击"未匹配文件"查看未关联的文件</p></div>';
                 return;
             }
-            list.innerHTML = `
-                <table class="meta-table">
-                    <thead><tr>
-                        <th style="width:60px;"></th>
-                        <th>标题</th>
-                        <th style="width:70px;">年份</th>
-                        <th style="width:60px;">类型</th>
-                        <th style="width:60px;">文件</th>
-                        <th style="width:140px;">操作</th>
-                    </tr></thead>
-                    <tbody>${items.map(m => {
-                        const poster = m.poster_path ? `<img src="https://image.tmdb.org/t/p/w92${m.poster_path}" style="width:44px;height:66px;object-fit:cover;border-radius:4px;">` : '';
-                        return `<tr>
-                            <td>${poster}</td>
-                            <td>
-                                <div class="meta-title">${escHtml(m.title)}</div>
-                                ${m.original_title && m.original_title !== m.title ? `<div class="meta-sub">${escHtml(m.original_title)}</div>` : ''}
-                            </td>
-                            <td>${m.year || '-'}</td>
-                            <td>${m.type === 'tv' ? '剧集' : m.type === 'movie' ? '电影' : '其他'}</td>
-                            <td>${m.file_count || 0}</td>
-                            <td>
-                                <div class="meta-actions">
-                                    <button class="btn btn-sm btn-outline edit-meta-btn" data-id="${m.id}" data-title="${escAttr(m.title)}" data-otitle="${escAttr(m.original_title)}" data-year="${m.year || ''}" data-type="${m.type || 'movie'}" data-genres="${escAttr(m.genres)}" data-tmdb="${m.tmdb_id || ''}" data-overview="${escAttr(m.overview)}" data-vip="${m.vip_only || 0}">编辑</button>
-                                    <button class="btn btn-sm btn-primary refresh-meta-btn" data-id="${m.id}">刷新</button>
-                                </div>
-                            </td>
-                        </tr>`;
-                    }).join('')}</tbody>
-                </table>
-            `;
-
-            $$('.edit-meta-btn').forEach(btn => {
-                btn.addEventListener('click', () => openEditMetaModal(btn));
-            });
-            $$('.refresh-meta-btn').forEach(btn => {
-                btn.addEventListener('click', () => refreshMetadata(btn.dataset.id));
-            });
+            renderMetadataTree();
         } catch (e) {
-            console.error('加载元数据失败:', e);
+            console.error('加载元数据树失败:', e);
+            $('#metadataTree').innerHTML = '<div class="error">加载失败: ' + escHtml(e.message || '') + '</div>';
         }
     }
 
-    function escAttr(str) {
-        return (str || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    async function loadUnmatchedTree() {
+        try {
+            $('#metadataTree').innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>加载中...</p></div>';
+            metaShowingUnmatched = true;
+            const groups = await api('/api/media.php?action=media_tree_unmatched');
+            if (!groups || groups.length === 0) {
+                $('#metadataTree').innerHTML = '<div class="empty-state"><h3>所有文件已匹配</h3><p>没有未匹配的文件</p></div>';
+                return;
+            }
+            metaData = groups.map(g => ({
+                id: 'unmatched_' + g.library_id,
+                name: g.library_name + ' (未匹配)',
+                path: '',
+                type: 'unmatched',
+                children: [],
+                unmatched: g.files,
+                _unmatchedGroup: true,
+            }));
+            renderMetadataTree();
+        } catch (e) {
+            console.error('加载未匹配文件失败:', e);
+            $('#metadataTree').innerHTML = '<div class="error">加载失败: ' + escHtml(e.message || '') + '</div>';
+        }
     }
 
+    function renderMetadataTree() {
+        let html = '';
+        metaData.forEach(lib => {
+            const libKey = 'lib_' + lib.id;
+            const isLibExp = metaExpanded[libKey] !== false;
+            const totalFiles = (lib.children || []).reduce((sum, c) => sum + (c.seasons ? c.seasons.reduce((s, se) => s + (se.episodes || []).length, 0) : (c.files || []).length), 0) + (lib.unmatched || []).length;
+
+            html += `<div class="meta-tree-lib">
+                <div class="meta-tree-node meta-tree-root" data-key="${libKey}" onclick="toggleMetaNode('${libKey}')">
+                    <span class="meta-tree-arrow">${isLibExp ? '▼' : '▶'}</span>
+                    <span class="meta-tree-icon">📁</span>
+                    <span class="meta-tree-label">${escHtml(lib.name)}</span>
+                    <span class="meta-tree-badge">${lib.type === 'tv' ? '剧集' : lib.type === 'movie' ? '电影' : '其他'}</span>
+                    <span class="meta-tree-count">${totalFiles} 文件</span>
+                </div>
+                <div class="meta-tree-children" style="${isLibExp ? '' : 'display:none'}">`;
+
+            if (lib._unmatchedGroup) {
+                html += renderUnmatchedFiles(lib.unmatched, libKey);
+            } else {
+                lib.children.forEach(child => {
+                    const childKey = libKey + '_child_' + child.id;
+                    const isChildExp = metaExpanded[childKey] !== false;
+                    let childIcon = child.poster_path ? `<img src="https://image.tmdb.org/t/p/w92${child.poster_path}" class="meta-tree-poster" alt="">` : '<span class="meta-tree-icon">🎬</span>';
+
+                    html += `<div class="meta-tree-node" data-key="${childKey}" onclick="toggleMetaNode('${childKey}')">
+                        <span class="meta-tree-arrow">${isChildExp ? '▼' : '▶'}</span>
+                        ${childIcon}
+                        <span class="meta-tree-label">${escHtml(child.title)}</span>
+                        ${child.year ? `<span class="meta-tree-year">(${child.year})</span>` : ''}
+                        ${child.vip_only ? '<span class="meta-tree-vip">VIP</span>' : ''}
+                        <span class="meta-tree-actions" onclick="event.stopPropagation()">
+                            <button class="btn btn-xs btn-outline" onclick="editMetaInline(${child.id}, '${escAttr(child.title)}', '${escAttr(child.overview || '')}', '${escAttr(child.genres || '')}', '${child.year || ''}', '${child.tmdb_id || ''}', ${child.vip_only || 0})" title="编辑">✏️</button>
+                            <button class="btn btn-xs btn-primary" onclick="refreshMetaInline(${child.id})" title="刷新元数据">🔄</button>
+                            <a href="/show.php?id=${child.id}" class="btn btn-xs btn-outline" title="详情页" target="_blank">🔗</a>
+                        </span>
+                    </div>
+                    <div class="meta-tree-children" style="${isChildExp ? '' : 'display:none'}">`;
+
+                    if (child.seasons) {
+                        child.seasons.forEach(season => {
+                            html += `<div class="meta-tree-season">📂 第 ${season.num} 季 (${season.episodes.length} 集)</div>`;
+                            html += renderEpisodeFiles(season.episodes);
+                        });
+                    } else if (child.files) {
+                        html += renderMovieFiles(child.files);
+                    }
+
+                    html += '</div>';
+                });
+
+                if (lib.unmatched.length > 0) {
+                    html += renderUnmatchedFiles(lib.unmatched, libKey);
+                }
+            }
+
+            html += '</div></div>';
+        });
+
+        $('#metadataTree').innerHTML = html;
+    }
+
+    function renderMovieFiles(files) {
+        return `<div class="meta-tree-files">${files.map(f => `
+            <div class="meta-tree-file">
+                <span class="meta-tree-file-name">📄 ${escHtml(f.file_name)}</span>
+                <span class="meta-tree-file-info">${f.resolution || ''} ${formatDurationForMeta(f.duration)} ${formatSizeForMeta(f.file_size)}</span>
+                <span class="meta-tree-actions">
+                    <button class="btn btn-xs btn-outline" onclick="matchFileInline(${f.id}, '${escAttr(f.file_name)}')" title="匹配到TMDB">🔍</button>
+                </span>
+            </div>`).join('')}</div>`;
+    }
+
+    function renderEpisodeFiles(episodes) {
+        return `<div class="meta-tree-files">${episodes.map(f => `
+            <div class="meta-tree-file">
+                <span class="meta-tree-ep">E${f.episode_number || '?'}</span>
+                <span class="meta-tree-file-name">📄 ${escHtml(f.file_name)}</span>
+                <span class="meta-tree-file-info">${f.resolution || ''} ${formatDurationForMeta(f.duration)}</span>
+                <span class="meta-tree-actions">
+                    <button class="btn btn-xs btn-outline" onclick="matchFileInline(${f.id}, '${escAttr(f.file_name)}')" title="匹配到TMDB">🔍</button>
+                </span>
+            </div>`).join('')}</div>`;
+    }
+
+    function renderUnmatchedFiles(files, parentKey) {
+        const uk = parentKey + '_unmatched';
+        const isExp = metaExpanded[uk] !== false;
+        return `<div class="meta-tree-node meta-unmatched" data-key="${uk}" onclick="toggleMetaNode('${uk}')">
+            <span class="meta-tree-arrow">${isExp ? '▼' : '▶'}</span>
+            <span class="meta-tree-icon">⚠️</span>
+            <span class="meta-tree-label">未匹配文件</span>
+            <span class="meta-tree-count">${files.length} 个</span>
+        </div>
+        <div class="meta-tree-children" style="${isExp ? '' : 'display:none'}">${renderMovieFiles(files)}</div>`;
+    }
+
+    window.toggleMetaNode = function(key) {
+        metaExpanded[key] = metaExpanded[key] === false ? true : false;
+        const node = document.querySelector(`[data-key="${key}"]`);
+        if (!node) return;
+        const children = node.nextElementSibling;
+        if (!children || !children.classList.contains('meta-tree-children')) return;
+        const arrow = node.querySelector('.meta-tree-arrow');
+        const isVisible = children.style.display !== 'none';
+        if (isVisible) {
+            children.style.display = 'none';
+            if (arrow) arrow.textContent = '▶';
+            metaExpanded[key] = false;
+        } else {
+            children.style.display = '';
+            if (arrow) arrow.textContent = '▼';
+            metaExpanded[key] = true;
+        }
+    };
+
+    window.editMetaInline = function(mediaId, title, overview, genres, year, tmdbId, vip) {
+        openEditMetaModal({
+            dataset: {
+                id: mediaId,
+                title: title,
+                otitle: '',
+                year: year || '',
+                type: 'movie',
+                overview: overview || '',
+                genres: genres || '',
+                tmdb: tmdbId || '',
+                vip: vip || '0',
+            }
+        });
+    };
+
+    window.refreshMetaInline = async function(mediaId) {
+        if (!confirm('确定要从 TMDB 重新获取此媒体的元数据？')) return;
+        try {
+            const res = await api('/api/scan.php?action=refresh_meta', {
+                method: 'POST',
+                body: JSON.stringify({ media_id: mediaId }),
+            });
+            if (res.success) {
+                alert('元数据已刷新，请重新加载列表');
+            } else {
+                alert('刷新失败: ' + (res.error || '未知错误'));
+            }
+        } catch (e) {
+            alert('刷新失败: 网络错误');
+        }
+        loadMetadataTree($('#metadataSearch').value.trim(), $('#metadataLibType').value);
+    };
+
+    window.matchFileInline = function(fileId, fileName) {
+        openMatchModal(fileId, fileName);
+    };
+
+    function formatDurationForMeta(sec) {
+        if (!sec || sec <= 0) return '';
+        const m = Math.floor(sec / 60);
+        if (m >= 60) return Math.floor(m / 60) + 'h' + (m % 60) + 'm';
+        return m + 'min';
+    }
+
+    function formatSizeForMeta(bytes) {
+        if (!bytes) return '';
+        if (bytes < 1024) return bytes + 'B';
+        if (bytes < 1048576) return (bytes / 1024).toFixed(1) + 'KB';
+        if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + 'MB';
+        return (bytes / 1073741824).toFixed(2) + 'GB';
+    }
+
+    // Edit meta modal (reuse existing)
     function openEditMetaModal(btn) {
-        $('#editMetaId').value = btn.dataset.id;
-        $('#editMetaTitle').value = btn.dataset.title || '';
-        $('#editMetaOriginalTitle').value = btn.dataset.otitle || '';
-        $('#editMetaYear').value = btn.dataset.year || '';
-        $('#editMetaType').value = btn.dataset.type || 'movie';
-        $('#editMetaOverview').value = btn.dataset.overview || '';
-        $('#editMetaGenres').value = btn.dataset.genres || '';
-        $('#editMetaTmdbId').value = btn.dataset.tmdb || '';
-        $('#editMetaVip').checked = (btn.dataset.vip == '1');
+        const d = btn.dataset;
+        $('#editMetaId').value = d.id;
+        $('#editMetaTitle').value = d.title || '';
+        $('#editMetaOriginalTitle').value = d.otitle || '';
+        $('#editMetaYear').value = d.year || '';
+        $('#editMetaType').value = d.type || 'movie';
+        $('#editMetaOverview').value = d.overview || '';
+        $('#editMetaGenres').value = d.genres || '';
+        $('#editMetaTmdbId').value = d.tmdb || '';
+        $('#editMetaVip').checked = (d.vip == '1');
         $('#editMetaModal').classList.add('active');
     }
 
@@ -434,7 +648,7 @@
         } catch (e) {
             alert('刷新失败: 网络错误');
         }
-        loadMetadata();
+        loadMetadataTree($('#metadataSearch').value.trim(), $('#metadataLibType').value);
     }
 
     $('#editMetaForm').addEventListener('submit', async (e) => {
@@ -456,7 +670,11 @@
             });
             if (res.success) {
                 $('#editMetaModal').classList.remove('active');
-                loadMetadata();
+                if (metaShowingUnmatched) {
+                    loadUnmatchedTree();
+                } else {
+                    loadMetadataTree($('#metadataSearch').value.trim(), $('#metadataLibType').value);
+                }
             } else {
                 alert('保存失败: ' + (res.error || '未知错误'));
             }
@@ -466,12 +684,20 @@
     });
 
     $('#metadataSearchBtn').addEventListener('click', () => {
-        loadMetadata($('#metadataSearch').value.trim(), $('#metadataType').value);
+        loadMetadataTree($('#metadataSearch').value.trim(), $('#metadataLibType').value);
     });
     $('#metadataSearch').addEventListener('keyup', (e) => {
-        if (e.key === 'Enter') loadMetadata($('#metadataSearch').value.trim(), $('#metadataType').value);
+        if (e.key === 'Enter') loadMetadataTree($('#metadataSearch').value.trim(), $('#metadataLibType').value);
+    });
+    $('#metadataUnmatchedBtn').addEventListener('click', () => {
+        loadUnmatchedTree();
+    });
+    $('#metadataRefreshBtn').addEventListener('click', () => {
+        if (metaShowingUnmatched) loadUnmatchedTree();
+        else loadMetadataTree($('#metadataSearch').value.trim(), $('#metadataLibType').value);
     });
 
+    // ===== TMDB 匹配 =====
     let currentMatchFileId = null;
 
     function openMatchModal(fileId, fileName) {
@@ -526,7 +752,7 @@
             });
             toast('匹配成功');
             $('#matchModal').classList.remove('active');
-            loadUnmatched();
+            loadMetadataTree($('#metadataSearch').value.trim(), $('#metadataLibType').value);
         } catch (e) {
             toast('匹配失败', 'error');
         }
@@ -565,6 +791,108 @@
             console.error('加载设置失败:', e);
         }
         checkFfmpegStatus();
+    }
+
+    async function loadAbout() {
+        try {
+            const stats = await api('/api/media.php?action=stats');
+            const settings = await api('/api/scan.php?action=get_settings');
+
+            let version = settings?.app_version || '3.1.0';
+            let siteName = settings?.site_name || 'NAS影库';
+
+            let tmdbKeyStatus = settings?.tmdb_api_key ? '<span style="color:#10b981;">已配置</span>' : '<span style="color:#f59e0b;">未配置</span>';
+            let ffmpegStatus = '<span style="color:var(--text-muted);">检测中...</span>';
+
+            try {
+                const res = await api('/api/scan.php?action=detect_ffmpeg');
+                if (res.found) {
+                    ffmpegStatus = `<span style="color:#10b981;">已找到</span> v${res.version || '?'}`;
+                } else {
+                    ffmpegStatus = '<span style="color:#e50914;">未找到</span>';
+                }
+            } catch(e) {}
+
+            let libsHtml = '';
+            if (stats?.libraries) {
+                libsHtml = stats.libraries.map(l => `
+                    <div style="display:flex;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:6px;margin-bottom:4px;">
+                        <span>${escHtml(l.name)} <span style="color:var(--text-muted);font-size:12px;">(${l.type === 'tv' ? '剧集' : l.type === 'movie' ? '电影' : '其他'})</span></span>
+                        <span style="color:var(--text-muted);font-size:12px;">${l.path}</span>
+                    </div>
+                `).join('');
+            }
+
+            $('#aboutContent').innerHTML = `
+                <div style="max-width:800px;">
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(160px, 1fr));gap:16px;margin-bottom:24px;">
+                        <div class="stat-card" style="text-align:center;padding:20px;">
+                            <div style="font-size:32px;font-weight:700;color:var(--accent);">${stats?.total_movies || 0}</div>
+                            <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">电影</div>
+                        </div>
+                        <div class="stat-card" style="text-align:center;padding:20px;">
+                            <div style="font-size:32px;font-weight:700;color:var(--accent);">${stats?.total_tv || 0}</div>
+                            <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">剧集</div>
+                        </div>
+                        <div class="stat-card" style="text-align:center;padding:20px;">
+                            <div style="font-size:32px;font-weight:700;color:var(--accent);">${stats?.total_files || 0}</div>
+                            <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">文件</div>
+                        </div>
+                        <div class="stat-card" style="text-align:center;padding:20px;">
+                            <div style="font-size:32px;font-weight:700;color:var(--accent);">${formatBytesForAbout(stats?.total_size || 0)}</div>
+                            <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">总大小</div>
+                        </div>
+                        <div class="stat-card" style="text-align:center;padding:20px;">
+                            <div style="font-size:32px;font-weight:700;color:var(--accent);">${stats?.total_plays || 0}</div>
+                            <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">播放次数</div>
+                        </div>
+                    </div>
+
+                    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:16px;">
+                        <h3 style="font-size:16px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid var(--border);">系统信息</h3>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px;">
+                            <div><span style="color:var(--text-muted);">站点名称:</span> ${escHtml(siteName)}</div>
+                            <div><span style="color:var(--text-muted);">版本:</span> v${escHtml(version)}</div>
+                            <div><span style="color:var(--text-muted);">PHP版本:</span> ${escHtml('<?= phpversion() ?: "N/A" ?>') || 'N/A'}</div>
+                            <div><span style="color:var(--text-muted);">TMDB API:</span> ${tmdbKeyStatus}</div>
+                            <div><span style="color:var(--text-muted);">FFmpeg:</span> ${ffmpegStatus}</div>
+                            <div><span style="color:var(--text-muted);">媒体库数量:</span> ${(stats?.libraries || []).length}</div>
+                            <div><span style="color:var(--text-muted);">转码:</span> ${settings?.transcode_enabled == '1' ? '<span style="color:#10b981;">已启用</span>' : '<span style="color:var(--text-muted);">未启用</span>'}</div>
+                            <div><span style="color:var(--text-muted);">注册:</span> ${settings?.allow_register == '1' ? '<span style="color:#10b981;">允许</span>' : '<span style="color:var(--text-muted);">禁止</span>'}</div>
+                        </div>
+                    </div>
+
+                    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:16px;">
+                        <h3 style="font-size:16px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border);">媒体库列表</h3>
+                        ${libsHtml || '<p style="color:var(--text-muted);font-size:13px;">暂无媒体库</p>'}
+                    </div>
+
+                    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:16px;">
+                        <h3 style="font-size:16px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border);">关于</h3>
+                        <p style="font-size:13px;color:var(--text-secondary);line-height:1.8;">
+                            <strong>NAS影库</strong> 是一套自建的媒体服务器系统，支持电影和剧集的播放、元数据管理、转码、字幕搜索等功能。
+                        </p>
+                        <div style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;">
+                            <a href="/about.php" target="_blank" class="btn btn-outline btn-sm">查看公开关于页面</a>
+                            <a href="https://github.com" target="_blank" class="btn btn-outline btn-sm">GitHub</a>
+                            <a href="https://www.themoviedb.org/" target="_blank" class="btn btn-outline btn-sm">TMDB</a>
+                        </div>
+                    </div>
+                </div>
+            `;
+        } catch (e) {
+            $('#aboutContent').innerHTML = '<p style="color:#e50914;">加载失败: ' + escHtml(e.message || '') + '</p>';
+        }
+    }
+
+    function formatBytesForAbout(bytes) {
+        if (!bytes) return '0 B';
+        const n = parseInt(bytes);
+        if (n < 1024) return n + ' B';
+        if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+        if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
+        if (n < 1099511627776) return (n / 1073741824).toFixed(2) + ' GB';
+        return (n / 1099511627776).toFixed(2) + ' TB';
     }
 
     // 主题即时预览
@@ -954,6 +1282,10 @@
         return div.innerHTML;
     }
 
+    function escAttr(str) {
+        return (str || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
     // ===== 活跃会话 =====
     let activityTimer = null;
 
@@ -1191,11 +1523,12 @@
             if (tab === 'dashboard') loadDashboard();
             if (tab === 'libraries') loadLibraries();
             if (tab === 'scan') loadScanControls();
-            if (tab === 'metadata') loadMetadata();
+            if (tab === 'metadata') loadMetadataTree();
             if (tab === 'users') { loadUsers(); loadUserGroupDropdown(); initUserSubtabs(); }
             if (tab === 'activity') { loadActivity(); clearInterval(activityTimer); activityTimer = setInterval(loadActivity, 10000); }
             if (tab === 'notify') loadNotifyUsers();
             if (tab === 'settings') loadSettings();
+            if (tab === 'about') loadAbout();
         });
     });
 

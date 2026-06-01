@@ -173,6 +173,104 @@ try {
             jsonResponse(['success' => true]);
             break;
 
+        case 'multi_hls':
+            $fileId = (int)($_GET['file_id'] ?? 0);
+            if (!$fileId) jsonResponse(['error' => '缺少file_id'], 400);
+
+            $file = db()->fetchOne('SELECT * FROM media_files WHERE id = ?', [$fileId]);
+            if (!$file) jsonResponse(['error' => '文件不存在'], 404);
+
+            $audioTracks = db()->fetchAll('SELECT * FROM audio_tracks WHERE file_id = ? ORDER BY stream_index', [$fileId]);
+            if (count($audioTracks) <= 1) {
+                jsonResponse(['playlist' => '/api/stream.php?id=' . $fileId, 'multi_track' => false]);
+                break;
+            }
+
+            $hlsDir = getSetting('hls_output_dir', sys_get_temp_dir() . '/nas_hls');
+            $outputDir = $hlsDir . "/multi_{$fileId}";
+            if (!is_dir($outputDir)) mkdir($outputDir, 0755, true);
+
+            $masterPath = $outputDir . '/master.m3u8';
+            $videoPath = $outputDir . '/video.m3u8';
+            $cacheKey = $outputDir . '/version.txt';
+            $currentMtime = filemtime($file['file_path']);
+
+            $cached = file_exists($cacheKey) ? (int)file_get_contents($cacheKey) : 0;
+            $needsRebuild = $cached !== $currentMtime || !file_exists($masterPath) || !file_exists($videoPath);
+
+            if ($needsRebuild) {
+                $ffmpeg = new FFmpeg();
+                $ffmpegCmd = sprintf(
+                    '%s -y -i "%s" -map 0:v:0 -map 0:a? -c copy -hls_time 8 -hls_list_size 0 -hls_segment_filename "%s/video_%%d.ts" -f hls "%s"',
+                    $ffmpeg->getFfmpegPath(),
+                    addslashes($file['file_path']),
+                    addslashes($outputDir),
+                    addslashes($videoPath)
+                );
+
+                exec($ffmpegCmd . ' 2>&1', $out, $code);
+
+                if ($code !== 0 || !file_exists($videoPath)) {
+                    jsonResponse(['error' => 'HLS生成失败: ' . implode("\n", array_slice($out, -5))], 500);
+                    break;
+                }
+
+                $master = "#EXTM3U\n#EXT-X-VERSION:3\n\n";
+                $master .= "#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1920x1080\n";
+                $master .= "video.m3u8\n";
+
+                file_put_contents($masterPath, $master);
+                file_put_contents($cacheKey, $currentMtime);
+
+                $infoPath = $outputDir . '/tracks.json';
+                file_put_contents($infoPath, json_encode(['audio' => $audioTracks]));
+            }
+
+            jsonResponse([
+                'playlist' => '/api/transcode.php?action=multi_playlist&file_id=' . $fileId,
+                'segment_prefix' => '/api/transcode.php?action=multi_segment&file_id=' . $fileId . '&seg=',
+                'audio_tracks' => $audioTracks,
+                'multi_track' => true,
+            ]);
+            break;
+
+        case 'multi_playlist':
+            $fileId = (int)($_GET['file_id'] ?? 0);
+
+            $hlsDir = getSetting('hls_output_dir', sys_get_temp_dir() . '/nas_hls');
+            $outputDir = $hlsDir . "/multi_{$fileId}";
+            $path = $outputDir . '/master.m3u8';
+
+            if (!file_exists($path)) {
+                http_response_code(404);
+                die('Playlist not found');
+            }
+
+            header('Content-Type: application/vnd.apple.mpegurl');
+            header('Access-Control-Allow-Origin: *');
+            header('Cache-Control: no-cache');
+            readfile($path);
+            break;
+
+        case 'multi_segment':
+            $fileId = (int)($_GET['file_id'] ?? 0);
+            $seg = $_GET['seg'] ?? '';
+
+            $hlsDir = getSetting('hls_output_dir', sys_get_temp_dir() . '/nas_hls');
+            $outputDir = $hlsDir . "/multi_{$fileId}";
+            $segPath = $outputDir . '/' . basename($seg);
+
+            if (!file_exists($segPath)) {
+                http_response_code(404);
+                die('Segment not found');
+            }
+
+            header('Content-Type: video/mp2t');
+            header('Access-Control-Allow-Origin: *');
+            header('Cache-Control: max-age=86400');
+            readfile($segPath);
+            break;
+
         default:
             jsonResponse(['error' => '未知操作'], 400);
     }

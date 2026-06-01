@@ -124,7 +124,7 @@ $siteName = getSetting('site_name', 'NAS影库');
     <div class="player-container" id="playerContainer">
         <!-- 顶部栏 -->
         <div class="player-topbar" id="playerTopbar">
-            <a href="#" class="back-btn" onclick="document.getElementById('videoPlayer')?.pause();window.location.href='/index.php';return false;">
+            <a href="#" class="back-btn" onclick="goBack();return false;">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
             </a>
             <h1 class="player-title"><?= e($file['title'] ?: $file['file_name']) ?></h1>
@@ -299,6 +299,11 @@ $siteName = getSetting('site_name', 'NAS影库');
                             </div>
                         </div>
 
+                        <!-- 字幕搜索 -->
+                        <button class="ctrl-btn" id="subSearchBtn" title="搜索字幕">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
+                        </button>
+
                         <!-- 画质选择 -->
                         <div class="quality-control">
                             <button class="ctrl-btn" id="qualityBtn" title="画质">
@@ -317,7 +322,33 @@ $siteName = getSetting('site_name', 'NAS影库');
                                             <span class="q-status">等待中</span>
                                         <?php elseif ($q['status'] === 'failed'): ?>
                                             <span class="q-status">失败</span>
-                                        <?php endif; ?>
+    <!-- 字幕搜索弹窗 -->
+    <div class="modal-overlay" id="subSearchModal">
+        <div class="modal-content" style="max-width:600px;max-height:80vh;overflow-y:auto;background:rgba(20,20,40,0.98);">
+            <button class="modal-close" id="closeSubSearch">&times;</button>
+            <div style="padding:24px;">
+                <h3 style="margin-bottom:16px;font-size:18px;">搜索字幕</h3>
+                <div style="display:flex;gap:8px;margin-bottom:16px;">
+                    <select id="subSearchLang" style="padding:8px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:13px;">
+                        <option value="zh">中文</option>
+                        <option value="en">英文</option>
+                        <option value="ja">日文</option>
+                        <option value="ko">韩文</option>
+                    </select>
+                    <button class="btn btn-primary" id="subSearchDoBtn" style="flex:1;">搜索</button>
+                </div>
+                <div id="subSearchResults" style="margin-top:12px;"></div>
+                <div style="margin-top:16px;border-top:1px solid rgba(255,255,255,0.1);padding-top:12px;">
+                    <p style="font-size:12px;color:var(--text-muted);">或粘贴字幕直链下载:</p>
+                    <div style="display:flex;gap:8px;margin-top:8px;">
+                        <input type="text" id="subDirectUrl" placeholder="https://example.com/subtitle.srt" style="flex:1;padding:8px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:13px;outline:none;">
+                        <button class="btn btn-outline" id="subDirectDownloadBtn">下载</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
                                     </div>
                                 <?php endforeach; ?>
                             </div>
@@ -352,6 +383,8 @@ $siteName = getSetting('site_name', 'NAS影库');
         posterPath: '<?= addslashes($file['poster_path'] ?? '') ?>',
         title: '<?= addslashes($file['title'] ?: $file['file_name']) ?>',
         fileName: '<?= addslashes($file['file_name']) ?>',
+        audioCount: <?= count($audioTracks) ?>,
+        subCount: <?= count($subTracks) ?>,
     };
     </script>
     <script src="/assets/js/player.js"></script>
@@ -362,8 +395,10 @@ $siteName = getSetting('site_name', 'NAS影库');
         if (!PD.userId || !PD.mediaId) return;
         const video = document.getElementById('videoPlayer');
         let hbTimer = null;
+        let sentFirst = false;
         function sendHeartbeat() {
             if (!video || video.paused) return;
+            sentFirst = true;
             fetch('/api/activity.php?action=heartbeat', {
                 method: 'POST',
                 headers: {'Content-Type':'application/json'},
@@ -382,7 +417,9 @@ $siteName = getSetting('site_name', 'NAS影库');
         video.addEventListener('pause', () => { clearInterval(hbTimer); });
         video.addEventListener('ended', () => { clearInterval(hbTimer); });
         window.addEventListener('beforeunload', () => {
-            fetch('/api/activity.php?action=stop', {method:'POST',keepalive:true});
+            if (sentFirst) {
+                navigator.sendBeacon('/api/activity.php?action=stop', JSON.stringify({ user_id: PD.userId }));
+            }
         });
     })();
     </script>

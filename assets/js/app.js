@@ -8,8 +8,10 @@
         total: 0,
         pages: 0,
         type: 'all',
+        libraryId: 0,
+        libraries: [],
         genre: '',
-        sort: 'title',
+        sort: 'added',
         search: '',
         viewMode: 'grid',
         cast: '',
@@ -33,16 +35,19 @@
             state.items = [];
         }
 
+        const typeParam = (state.type === 'all' || state.type === 'favorites' || state.type === 'collections' || state.type === 'library') ? 'all' : state.type;
+
         const params = new URLSearchParams({
             action: 'list',
             page: state.page,
             limit: state.limit,
-            type: state.type,
+            type: typeParam,
             genre: state.genre,
             sort: state.sort,
             search: state.search,
         });
         if (state.cast) params.append('cast', state.cast);
+        if (state.libraryId > 0) params.append('library_id', state.libraryId);
 
         $('#loadingSpinner').style.display = 'flex';
         $('#emptyState').style.display = 'none';
@@ -78,66 +83,170 @@
 
     function renderGrid() {
         const grid = $('#posterGrid');
+
+        if (state.libraryId === 0 && state.type !== 'favorites' && state.type !== 'collections' && state.search === '') {
+            renderGroupedSections();
+            return;
+        }
+
         grid.innerHTML = '';
+        grid.className = 'poster-grid';
+        if (state.viewMode === 'list') grid.classList.add('list-view');
 
         state.items.forEach(item => {
-            const card = document.createElement('div');
-            card.className = `poster-card${state.viewMode === 'list' ? ' list-item' : ''}`;
-            card.dataset.id = item.id;
-
-            const posterUrl = item.poster_path
-                ? `https://image.tmdb.org/t/p/w500${item.poster_path}`
-                : null;
-
-            const rating = item.rating ? parseFloat(item.rating).toFixed(1) : '';
-            const year = item.year || '';
-            const typeLabel = item.type === 'tv' ? '剧集' : '电影';
-
-            if (state.viewMode === 'list') {
-                card.innerHTML = `
-                    ${posterUrl
-                        ? `<img class="poster-img" data-src="${posterUrl}" alt="${escHtml(item.title)}">`
-                        : `<div class="no-poster"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><path d="m7 2v20l5-3 5 3V2"/></svg></div>`
-                    }
-                    <div class="poster-overlay">
-                        <div class="poster-title">${escHtml(item.title)}</div>
-                        <div class="poster-meta">
-                            ${year ? `<span>${year}</span>` : ''}
-                            ${rating ? `<span class="poster-rating">★ ${rating}</span>` : ''}
-                            <span>${typeLabel}</span>
-                        </div>
-                    </div>
-                `;
-            } else {
-                card.innerHTML = `
-                    ${posterUrl
-                        ? `<img class="poster-img" data-src="${posterUrl}" alt="${escHtml(item.title)}">`
-                        : `<div class="no-poster"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><path d="m7 2v20l5-3 5 3V2"/></svg><span>${escHtml(item.title)}</span></div>`
-                    }
-                    ${year ? `<span class="poster-year-badge">${year}</span>` : ''}
-                    <span class="poster-type-badge">${typeLabel}</span>
-                    <div class="poster-play"><svg width="24" height="24" viewBox="0 0 24 24" fill="#fff"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
-                    <div class="poster-overlay">
-                        <div class="poster-title">${escHtml(item.title)}</div>
-                        <div class="poster-meta">
-                            ${rating ? `<span class="poster-rating">★ ${rating}</span>` : ''}
-                            ${item.genres ? `<span>${item.genres.split(',')[0]}</span>` : ''}
-                        </div>
-                    </div>
-                `;
-            }
-
-            card.addEventListener('click', () => {
-                if (item.type === 'tv') {
-                    window.location.href = '/show.php?id=' + item.id;
-                } else {
-                    showDetail(item.id);
-                }
-            });
+            const card = createPosterCard(item);
             grid.appendChild(card);
         });
 
         lazyLoadImages();
+    }
+
+    function createPosterCard(item) {
+        const card = document.createElement('div');
+        card.className = `poster-card${state.viewMode === 'list' ? ' list-item' : ''}`;
+        card.dataset.id = item.id;
+
+        const posterUrl = item.poster_path
+            ? `https://image.tmdb.org/t/p/w500${item.poster_path}`
+            : null;
+
+        const rating = item.rating ? parseFloat(item.rating).toFixed(1) : '';
+        const year = item.year || '';
+        const typeLabel = item.type === 'tv' ? '剧集' : '电影';
+
+        if (state.viewMode === 'list') {
+            card.innerHTML = `
+                ${posterUrl
+                    ? `<img class="poster-img" data-src="${posterUrl}" alt="${escHtml(item.title)}">`
+                    : `<div class="no-poster"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><path d="m7 2v20l5-3 5 3V2"/></svg></div>`
+                }
+                <div class="poster-overlay">
+                    <div class="poster-title">${escHtml(item.title)}</div>
+                    <div class="poster-meta">
+                        ${year ? `<span>${year}</span>` : ''}
+                        ${rating ? `<span class="poster-rating">★ ${rating}</span>` : ''}
+                        <span>${typeLabel}</span>
+                    </div>
+                </div>
+            `;
+        } else {
+            card.innerHTML = `
+                ${posterUrl
+                    ? `<img class="poster-img" data-src="${posterUrl}" alt="${escHtml(item.title)}">`
+                    : `<div class="no-poster"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><path d="m7 2v20l5-3 5 3V2"/></svg><span>${escHtml(item.title)}</span></div>`
+                }
+                ${year ? `<span class="poster-year-badge">${year}</span>` : ''}
+                <span class="poster-type-badge">${typeLabel}</span>
+                <div class="poster-play"><svg width="24" height="24" viewBox="0 0 24 24" fill="#fff"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
+                <div class="poster-overlay">
+                    <div class="poster-title">${escHtml(item.title)}</div>
+                    <div class="poster-meta">
+                        ${rating ? `<span class="poster-rating">★ ${rating}</span>` : ''}
+                        ${item.genres ? `<span>${item.genres.split(',')[0]}</span>` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        card.addEventListener('click', () => {
+            window.location.href = '/show.php?id=' + item.id;
+        });
+        return card;
+    }
+
+    async function renderGroupedSections() {
+        const grid = $('#posterGrid');
+        grid.innerHTML = '';
+        grid.className = '';
+
+        let libs = state.libraries;
+        if (libs.length === 0) {
+            try {
+                libs = await api('/api/scan.php?action=list_libraries');
+                state.libraries = libs || [];
+            } catch (e) {
+                grid.innerHTML = '<div class="empty-state"><h3>暂无媒体库</h3><p>请在管理后台添加媒体库</p></div>';
+                return;
+            }
+        }
+
+        if (!libs || libs.length === 0) {
+            grid.innerHTML = '<div class="empty-state"><h3>暂无媒体库</h3><p>请在管理后台添加媒体库</p></div>';
+            return;
+        }
+
+        let hasContent = false;
+        for (const lib of libs) {
+            try {
+                const params = new URLSearchParams({
+                    action: 'list',
+                    page: 1,
+                    limit: 12,
+                    library_id: lib.id,
+                    sort: 'added',
+                });
+                const data = await api(`/api/media.php?${params}`);
+                if (!data.items || data.items.length === 0) continue;
+                hasContent = true;
+
+                const section = document.createElement('div');
+                section.className = 'lib-section';
+
+                const header = document.createElement('div');
+                header.className = 'lib-section-header';
+                header.innerHTML = `<h3 class="lib-section-title">${escHtml(lib.name)}</h3>`;
+                section.appendChild(header);
+
+                const row = document.createElement('div');
+                row.className = 'lib-section-row';
+                row.style.cssText = 'display:flex;gap:12px;overflow-x:auto;padding:0 24px 16px;scroll-snap-type:x mandatory;';
+
+                data.items.forEach(item => {
+                    const card = document.createElement('div');
+                    card.className = 'lib-section-card';
+                    card.style.cssText = 'flex-shrink:0;width:150px;cursor:pointer;transition:transform 0.2s;scroll-snap-align:start;';
+                    card.dataset.id = item.id;
+
+                    const posterUrl = item.poster_path
+                        ? `https://image.tmdb.org/t/p/w300${item.poster_path}`
+                        : '';
+
+                    card.innerHTML = `
+                        <div class="lib-card-poster" style="position:relative;width:100%;aspect-ratio:2/3;border-radius:8px;overflow:hidden;background:var(--bg-card);">
+                            ${posterUrl ? `<img src="${posterUrl}" alt="" style="width:100%;height:100%;object-fit:cover;" loading="lazy">` : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);">N/A</div>'}
+                            <div class="poster-play" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:48px;height:48px;background:rgba(229,9,20,0.9);border-radius:50%;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity 0.3s;"><svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
+                        </div>
+                        <div style="font-size:13px;color:var(--text-primary);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(item.title)}</div>
+                        <div style="font-size:11px;color:var(--text-muted);">${item.year || ''} ${item.type === 'tv' ? '剧集' : '电影'}</div>
+                    `;
+
+                    card.addEventListener('mouseenter', () => {
+                        card.style.transform = 'translateY(-4px)';
+                        const playBtn = card.querySelector('.poster-play');
+                        if (playBtn) playBtn.style.opacity = '1';
+                    });
+                    card.addEventListener('mouseleave', () => {
+                        card.style.transform = '';
+                        const playBtn = card.querySelector('.poster-play');
+                        if (playBtn) playBtn.style.opacity = '0';
+                    });
+                    card.addEventListener('click', () => {
+                        window.location.href = '/show.php?id=' + item.id;
+                    });
+
+                    row.appendChild(card);
+                });
+
+                section.appendChild(row);
+                grid.appendChild(section);
+            } catch (e) {
+                console.error(`加载媒体库 ${lib.name} 失败:`, e);
+            }
+        }
+
+        if (!hasContent) {
+            grid.innerHTML = '<div class="empty-state" style="padding:60px;"><h3>所有媒体库暂无内容</h3><p>请先扫描媒体库以获取媒体信息</p></div>';
+        }
     }
 
     function lazyLoadImages() {
@@ -264,12 +373,7 @@
             slider.querySelectorAll('.hero-detail-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
                     const mediaId = btn.dataset.mediaId;
-                    const type = btn.dataset.type;
-                    if (type === 'tv') {
-                        window.location.href = '/show.php?id=' + mediaId;
-                    } else {
-                        showDetail(parseInt(mediaId));
-                    }
+                    window.location.href = '/show.php?id=' + mediaId;
                 });
             });
 
@@ -460,6 +564,9 @@
                 $$('.nav-links a').forEach(l => l.classList.remove('active'));
                 link.classList.add('active');
                 state.type = link.dataset.section;
+                state.libraryId = parseInt(link.dataset.libId) || 0;
+                state.page = 1;
+                state.items = [];
                 if (state.type === 'favorites') {
                     loadFavorites();
                 } else if (state.type === 'collections') {

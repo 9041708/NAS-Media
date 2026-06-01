@@ -36,6 +36,8 @@
     let seekIndicatorTimer = null;
     let lastTapTime = 0;
     let savePositionTimer = null;
+    let currentAudioIdx = -1;
+    let multiHlsReady = false;
 
     // ===== 工具函数 =====
     function formatTime(sec) {
@@ -246,11 +248,26 @@
                 opt.classList.add('active');
                 $('#audioMenu').classList.remove('show');
 
+                const streamIndex = parseInt(opt.dataset.stream);
+                currentAudioIdx = streamIndex;
+
                 if (hlsInstance) {
-                    hlsInstance.audioTrack = parseInt(opt.dataset.stream);
+                    try {
+                        hlsInstance.audioTrack = streamIndex;
+                    } catch (err) {}
+                }
+
+                if (multiHlsReady && hlsInstance) {
+                    try {
+                        hlsInstance.audioTrack = streamIndex;
+                    } catch (err) {}
                 }
             });
         });
+
+        if (PD.audioCount > 1) {
+            initMultiTrackHls();
+        }
     }
 
     // ===== 字幕切换 =====
@@ -802,7 +819,204 @@
     // 页面关闭前保存
     window.addEventListener('beforeunload', () => {
         savePosition();
-        recordPlay();
     });
+
+    window.goBack = function() {
+        if (hlsInstance) hlsInstance.destroy();
+        savePosition();
+        if (PD.userId) {
+            navigator.sendBeacon('/api/activity.php?action=stop', JSON.stringify({ user_id: PD.userId }));
+        }
+        location.replace('/index.php');
+    };
+
+    // ===== 多音轨HLS初始化 =====
+    async function initMultiTrackHls() {
+        try {
+            const res = await fetch(`/api/transcode.php?action=multi_hls&file_id=${PD.fileId}`);
+            const data = await res.json();
+            if (data.error || !data.multi_track) return;
+
+            const currentTime = video.currentTime || 0;
+            const wasPlaying = !video.paused;
+
+            if (typeof Hls === 'undefined') {
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/hls.js@latest';
+                script.onload = () => startMultiHls(data.playlist, currentTime, wasPlaying);
+                document.head.appendChild(script);
+            } else {
+                startMultiHls(data.playlist, currentTime, wasPlaying);
+            }
+        } catch (e) {
+            console.error('多音轨HLS初始化失败:', e);
+        }
+    }
+
+    function startMultiHls(playlistUrl, startTime, wasPlaying) {
+        if (hlsInstance) hlsInstance.destroy();
+        if (typeof Hls === 'undefined' || !Hls.isSupported()) return;
+
+        hlsInstance = new Hls({ startPosition: startTime });
+        hlsInstance.loadSource(playlistUrl);
+        hlsInstance.attachMedia(video);
+        hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+            multiHlsReady = true;
+            if (wasPlaying) video.play();
+            $$('.audio-option').forEach(opt => {
+                opt.addEventListener('click', (e) => {
+                    if (hlsInstance && multiHlsReady) {
+                        try { hlsInstance.audioTrack = parseInt(opt.dataset.stream); } catch (err) {}
+                    }
+                }, { once: false });
+            });
+        });
+    }
+
+    // ===== 字幕搜索 =====
+    const subSearchBtn = $('#subSearchBtn');
+    const subSearchModal = $('#subSearchModal');
+    const subSearchResults = $('#subSearchResults');
+    const closeSubSearch = $('#closeSubSearch');
+
+    if (subSearchBtn) {
+        subSearchBtn.addEventListener('click', async () => {
+            subSearchModal.classList.add('active');
+            await doSubSearch();
+        });
+    }
+    if (closeSubSearch) {
+        closeSubSearch.addEventListener('click', () => subSearchModal.classList.remove('active'));
+    }
+    if (subSearchModal) {
+        subSearchModal.addEventListener('click', (e) => {
+            if (e.target === subSearchModal) subSearchModal.classList.remove('active');
+        });
+    }
+
+    $('#subSearchDoBtn')?.addEventListener('click', doSubSearch);
+
+    async function doSubSearch() {
+        const lang = $('#subSearchLang')?.value || 'zh';
+        subSearchResults.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>搜索中...</p></div>';
+        try {
+            const res = await fetch(`/api/subtitle.php?action=search&file_id=${PD.fileId}&lang=${lang}`);
+            const data = await res.json();
+            if (data.error) {
+                subSearchResults.innerHTML = `<p style="color:var(--text-muted);text-align:center;">${data.error}</p>`;
+                return;
+            }
+            const results = data.results || [];
+            if (results.length === 0) {
+                subSearchResults.innerHTML = '<p style="color:var(--text-muted);text-align:center;">未找到字幕，请尝试其他语言或手动下载</p>';
+                return;
+            }
+            subSearchResults.innerHTML = results.map((r, i) => `
+                <div class="sub-search-item" style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:rgba(255,255,255,0.04);border-radius:6px;margin-bottom:8px;">
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-size:13px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtmlP(r.name)}</div>
+                        <div style="font-size:11px;color:var(--text-muted);">${escHtmlP(r.source)} | ${r.lang || '?'}</div>
+                    </div>
+                    <button class="btn btn-xs btn-primary sub-dl-btn" data-url="${escAttrP(r.url)}" data-name="${escAttrP(r.name)}" data-lang="${escAttrP(r.lang || 'zh')}" data-local="${escAttrP(r.local_path || '')}" data-type="${r.type || 'link'}">
+                        ${r.type === 'download' ? '下载' : r.type === 'local' ? '添加' : '打开'}
+                    </button>
+                </div>
+            `).join('');
+
+            $$('.sub-dl-btn').forEach(btn => {
+                btn.addEventListener('click', () => downloadSubtitle(btn));
+            });
+        } catch (e) {
+            subSearchResults.innerHTML = '<p style="color:#e50914;text-align:center;">搜索失败: ' + e.message + '</p>';
+        }
+    }
+
+    async function downloadSubtitle(btn) {
+        const url = btn.dataset.url;
+        const name = btn.dataset.name;
+        const lang = btn.dataset.lang;
+        const localPath = btn.dataset.local;
+        const type = btn.dataset.type;
+
+        if (type === 'link') {
+            window.open(url, '_blank');
+            return;
+        }
+
+        btn.textContent = '下载中...';
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/subtitle.php?action=download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    file_id: PD.fileId,
+                    url: url,
+                    name: name,
+                    lang: lang,
+                    local_path: localPath,
+                }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                btn.textContent = '已添加';
+                btn.style.background = '#10b981';
+                setTimeout(() => subSearchModal.classList.remove('active'), 1000);
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                btn.textContent = '失败';
+                btn.style.background = '#e50914';
+                btn.disabled = false;
+            }
+        } catch (e) {
+            btn.textContent = '失败';
+            btn.style.background = '#e50914';
+            btn.disabled = false;
+        }
+    }
+
+    $('#subDirectDownloadBtn')?.addEventListener('click', async () => {
+        const url = $('#subDirectUrl')?.value.trim();
+        if (!url) return;
+        const btn = $('#subDirectDownloadBtn');
+        const orig = btn.textContent;
+        btn.textContent = '下载中...';
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/subtitle.php?action=download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    file_id: PD.fileId,
+                    url: url,
+                    name: '手动下载字幕',
+                    lang: $('#subSearchLang')?.value || 'zh',
+                }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                btn.textContent = '已添加';
+                btn.style.background = '#10b981';
+                setTimeout(() => subSearchModal.classList.remove('active'), 1000);
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                btn.textContent = '失败';
+                btn.disabled = false;
+            }
+        } catch (e) {
+            btn.textContent = '失败';
+            btn.disabled = false;
+        }
+    });
+
+    function escHtmlP(str) {
+        const div = document.createElement('div');
+        div.textContent = str || '';
+        return div.innerHTML;
+    }
+
+    function escAttrP(str) {
+        return (str || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
 
 })();

@@ -56,10 +56,12 @@ try {
 
             if (!is_dir($realPath)) jsonResponse(['error' => '目录不存在: ' . $realPath], 400);
 
+            $maxOrder = db()->fetchColumn('SELECT COALESCE(MAX(COALESCE(sort_order,0)), 0) FROM libraries');
             $id = db()->insert('libraries', [
                 'name' => $name,
                 'path' => $realPath,
                 'type' => $type,
+                'sort_order' => ($maxOrder + 1),
             ]);
 
             jsonResponse(['success' => true, 'id' => $id]);
@@ -82,7 +84,7 @@ try {
             break;
 
         case 'list_libraries':
-            $libraries = db()->fetchAll('SELECT * FROM libraries ORDER BY name');
+            $libraries = db()->fetchAll('SELECT * FROM libraries ORDER BY COALESCE(sort_order, 0) ASC, name ASC');
             foreach ($libraries as &$lib) {
                 $lib['file_count'] = db()->fetchColumn(
                     'SELECT COUNT(*) FROM media_files WHERE library_id = ?',
@@ -90,6 +92,17 @@ try {
                 );
             }
             jsonResponse($libraries);
+            break;
+
+        case 'reorder_libraries':
+            if ($method !== 'POST') jsonResponse(['error' => '方法不允许'], 405);
+            auth()->requireAdmin();
+            $input = json_decode(file_get_contents('php://input'), true);
+            $orders = $input['orders'] ?? [];
+            foreach ($orders as $o) {
+                db()->query('UPDATE libraries SET sort_order = ? WHERE id = ?', [(int)$o['order'], (int)$o['id']]);
+            }
+            jsonResponse(['success' => true]);
             break;
 
         case 'unmatched':

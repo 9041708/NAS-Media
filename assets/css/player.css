@@ -19,11 +19,14 @@
 /* 视频区 */
 .video-area {
     flex: 1; position: relative; background: #000;
-    display: flex; align-items: center; justify-content: center;
+    min-height: 0;
     user-select: none; -webkit-user-select: none;
 }
 .video-area video {
-    width: 100%; height: 100%; object-fit: contain;
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    object-fit: contain;
+    z-index: 1;
 }
 
 /* 字幕层 */
@@ -282,4 +285,33 @@
 }
 .ep-panel-name {
     flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* 字幕搜索弹窗 */
+#subSearchModal .modal-content {
+    background: rgba(20,20,40,0.98);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px;
+}
+#subSearchModal .loading-spinner {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-muted);
+}
+#subSearchModal .spinner {
+    width: 24px; height: 24px;
+    border: 2px solid rgba(255,255,255,0.1);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 8px;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+.sub-search-item .btn-xs {
+    padding: 4px 12px;
+    font-size: 12px;
+    border-radius: 4px;
+    flex-shrink: 0;
 }

@@ -49,7 +49,6 @@ try {
                 'duration'     => $duration,
                 'device'       => $_SERVER['HTTP_USER_AGENT'] ?? '',
                 'ip_address'   => $_SERVER['REMOTE_ADDR'] ?? '',
-                'last_heartbeat' => date('Y-m-d H:i:s'),
             ];
 
             if ($existing) {
@@ -63,9 +62,10 @@ try {
             break;
 
         case 'stop':
-            $userId = $_SESSION['user_id'] ?? 0;
+            $input = json_decode(file_get_contents('php://input'), true);
+            $userId = $_SESSION['user_id'] ?? ($input['user_id'] ?? 0);
             if ($userId) {
-                db()->delete('active_sessions', 'user_id = ?', [$userId]);
+                db()->delete('active_sessions', 'user_id = ?', [(int)$userId]);
             }
             jsonResponse(['success' => true]);
             break;

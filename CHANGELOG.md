@@ -1,5 +1,49 @@
 # 更新日志
 
+## v3.1.0 (2026-06-02)
+
+### 新增
+- **首页按媒体库分组** - Emby 风格分组展示，每个媒体库独立横向滚动海报行，导航栏动态显示媒体库名称
+- **媒体库排序** - 管理后台 ▲▼ 按钮调整媒体库显示顺序，首页导航和分组即时生效
+- **多音轨 HLS 流** - 播放器检测到多音轨时自动生成无损 HLS 流（`-c copy`），hls.js 实时切换音轨
+- **字幕搜索与下载** - OpenSubtitles / TheSubDB / 本地文件多源搜索，一键下载或手动粘贴字幕直链
+- **管理员关于页面** - 系统概览统计卡片、系统信息表（PHP版本/TMDB/FFmpeg状态）、媒体库列表
+- **详情页内联编辑** - 管理员在 show.php 详情页可直接编辑标题/年份/简介/类型等元数据
+
+### 改进
+- **元数据管理重构** - 树形文件夹层级展示（媒体库→剧集→季→集），支持展开/折叠、内联编辑、TMDB 匹配
+- **电影详情页** - 电影改为独立详情页 `/show.php?id=X`，替代弹窗模式，与剧集统一体验
+- **播放器进度条修复** - 移除 `.video-area` 多余的 flex 布局，修复进度条在部分情况下不显示的问题
+- **播放按钮文案** - 电影继续观看显示"继续观看"，剧集显示"继续 第X集"
+- **TMDB 匹配** - 元数据管理未匹配文件列表支持一键匹配，匹配后自动刷新
+
+### 修复
+- **返回按钮提速** - 移除阻塞式 `pause()`，改用 `sendBeacon` + `location.replace()` 极速返回
+- **活跃会话修复** - `last_heartbeat` 交由 MySQL `ON UPDATE CURRENT_TIMESTAMP` 自动维护，修复时区不一致导致会话不显示的问题
+- **媒体库导航修复** - 点击媒体库名称时 `type` 参数误传为 `'library'` 导致查不到影片，改为 `'all'`
+
+### 文件变更
+- 重写 `admin/index.php` 元数据面板 → 树形目录视图
+- 重写 `assets/js/admin.js` 元数据管理、媒体库排序逻辑
+- 更新 `api/media.php` - 新增 `media_tree`/`media_tree_unmatched`/`library_id` 过滤
+- 更新 `api/transcode.php` - 新增 `multi_hls`/`multi_playlist`/`multi_segment`
+- 更新 `api/subtitle.php` - 新增 `search`/`download`，修复 `$this->` 调用错误
+- 更新 `api/scan.php` - 新增 `reorder_libraries`、`add_library` 自动排号
+- 更新 `index.php` - 导航栏动态媒体库链接、`sort_order` 排序
+- 更新 `assets/js/player.js` - 多音轨 HLS 初始化、字幕搜索弹窗
+- 更新 `show.php` - 内联编辑弹窗、播放按钮文案优化
+- 更新 `player.php` - 字幕搜索按钮、播放数据传递
+- 新增 `assets/css/admin.css` - 树形视图、排序徽标样式
+- 新增 `assets/css/player.css` - 字幕搜索弹窗、修复视频区布局
+- 新增 `assets/css/style.css` - 媒体库分组样式
+- 更新 `database.sql` - `libraries` 表新增 `sort_order` 字段
+- 更新 `includes/FFmpeg.php` - 新增 `getFfmpegPath()`/`getFfprobePath()` 公共方法
+- 更新 `api/activity.php` - 修复 `last_heartbeat` 时区问题、`stop` 支持 POST body 降级
+- 更新 `assets/js/app.js` - 媒体库导航 type 参数修复、电影跳转详情页、分组渲染
+- 更新 `README.md` - v3.1.0 功能特性更新、目录结构完善
+
+---
+
 ## v3.0.0 (2026-06-01)
 
 ### 新增

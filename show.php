@@ -217,7 +217,7 @@ $genres = !empty($item['genres']) ? array_map('trim', explode(',', $item['genres
                 <?php if (!empty($files)): ?>
                     <button class="btn-act btn-play-main" onclick="playFile(<?= $continueFile ? $continueFile['file_id'] : $files[0]['id'] ?>)">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                        <?= $continueFile ? '继续 第' . ($continueFile['episode_number'] ?? '?') . '集' : '播放' ?>
+                        <?= $continueFile ? ($item['type'] === 'tv' ? '继续 第' . ($continueFile['episode_number'] ?? '?') . '集' : '继续观看') : '播放' ?>
                     </button>
                 <?php endif; ?>
                 <?php if ($item['tmdb_id']): ?>
@@ -244,7 +244,7 @@ $genres = !empty($item['genres']) ? array_map('trim', explode(',', $item['genres
                         <button onclick="showAddToCollection()">添加到合集</button>
                         <?php if ($user): ?><button onclick="togglePlayed()"><?= $playStatus ? '标记为未看' : '标记为已看' ?></button><?php endif; ?>
                         <?php if ($isAdmin): ?>
-                            <a href="/admin/index.php#metadata" style="color:var(--text-primary);">编辑元数据</a>
+                            <button onclick="openEditMetaOnShow()">编辑元数据</button>
                             <button onclick="refreshMetadata()">刷新元数据</button>
                             <button onclick="scanMediaFiles()">扫描媒体库文件</button>
                         <?php endif; ?>
@@ -461,6 +461,93 @@ async function scanMediaFiles(){
 }
 
 document.getElementById('logoutBtn')?.addEventListener('click',async e=>{e.preventDefault();await fetch('/api/auth.php?action=logout');location.href='/index.php';});
+
+function openEditMetaOnShow() {
+    const d = document.createElement('div');
+    d.className = 'modal-overlay';
+    d.style.cssText = 'display:flex;z-index:3000;';
+    d.innerHTML = `<div class="modal-content" style="max-width:500px;background:rgba(20,20,40,0.98);border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:24px;max-height:90vh;overflow-y:auto;">
+        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()" style="position:static;float:right;">&times;</button>
+        <h3 style="margin-bottom:16px;">编辑元数据</h3>
+        <form id="showEditMetaForm">
+            <input type="hidden" name="media_id" value="<?= $item['id'] ?>">
+            <div class="form-group" style="margin-bottom:12px;">
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">标题</label>
+                <input type="text" name="title" value="<?= e($item['title'] ?? '') ?>" style="width:100%;padding:8px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:13px;outline:none;">
+            </div>
+            <div class="form-group" style="margin-bottom:12px;">
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">原始标题</label>
+                <input type="text" name="original_title" value="<?= e($item['original_title'] ?? '') ?>" style="width:100%;padding:8px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:13px;outline:none;">
+            </div>
+            <div style="display:flex;gap:12px;margin-bottom:12px;">
+                <div class="form-group" style="flex:1;">
+                    <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">年份</label>
+                    <input type="number" name="year" value="<?= $item['year'] ?? '' ?>" style="width:100%;padding:8px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:13px;outline:none;">
+                </div>
+                <div class="form-group" style="flex:1;">
+                    <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">类型</label>
+                    <select name="type" style="width:100%;padding:8px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:13px;outline:none;">
+                        <option value="movie" <?= ($item['type'] ?? '') === 'movie' ? 'selected' : '' ?>>电影</option>
+                        <option value="tv" <?= ($item['type'] ?? '') === 'tv' ? 'selected' : '' ?>>剧集</option>
+                        <option value="other" <?= ($item['type'] ?? '') === 'other' ? 'selected' : '' ?>>其他</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group" style="margin-bottom:12px;">
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">简介</label>
+                <textarea name="overview" rows="3" style="width:100%;padding:8px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:13px;outline:none;resize:vertical;"><?= e($item['overview'] ?? '') ?></textarea>
+            </div>
+            <div class="form-group" style="margin-bottom:12px;">
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">类型标签 (逗号分隔)</label>
+                <input type="text" name="genres" value="<?= e($item['genres'] ?? '') ?>" style="width:100%;padding:8px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:13px;outline:none;">
+            </div>
+            <div style="display:flex;gap:12px;margin-bottom:16px;">
+                <div class="form-group" style="flex:1;">
+                    <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">TMDB ID</label>
+                    <input type="number" name="tmdb_id" value="<?= $item['tmdb_id'] ?? '' ?>" style="width:100%;padding:8px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:13px;outline:none;">
+                </div>
+                <div class="form-group" style="display:flex;align-items:flex-end;gap:6px;">
+                    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#fff;cursor:pointer;">
+                        <input type="checkbox" name="vip_only" value="1" <?= ($item['vip_only'] ?? 0) ? 'checked' : '' ?>> VIP专属
+                    </label>
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;">
+                <button type="button" class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()" style="padding:8px 20px;">取消</button>
+                <button type="submit" class="btn btn-primary" style="padding:8px 20px;">保存</button>
+            </div>
+        </form>
+    </div>`;
+    document.body.appendChild(d);
+
+    d.querySelector('form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const body = {
+            media_id: parseInt(fd.get('media_id')),
+            title: fd.get('title').trim(),
+            original_title: fd.get('original_title').trim(),
+            year: parseInt(fd.get('year')) || null,
+            type: fd.get('type'),
+            overview: fd.get('overview').trim(),
+            genres: fd.get('genres').trim(),
+            tmdb_id: parseInt(fd.get('tmdb_id')) || null,
+            vip_only: fd.get('vip_only') == '1' ? 1 : 0,
+        };
+        try {
+            const r = await fetch('/api/media.php?action=update_metadata',{
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify(body),
+            });
+            const data = await r.json();
+            if(data.success){ d.remove(); location.reload(); }
+            else alert('保存失败: ' + (data.error||''));
+        } catch(err){ alert('网络错误'); }
+    });
+
+    d.addEventListener('click', (ev) => { if(ev.target===d) d.remove(); });
+}
 </script>
 
 <div class="trailer-overlay" id="trailerOverlay">

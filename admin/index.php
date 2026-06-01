@@ -60,7 +60,7 @@ $user = auth()->getUser();
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
                     消息推送
                 </a>
-                <a href="/about.php" class="nav-item" target="_blank">
+                <a href="#about" class="nav-item" data-tab="about">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
                     关于
                 </a>
@@ -114,19 +114,20 @@ $user = auth()->getUser();
             <section class="admin-section" id="tab-metadata">
                 <div class="section-header">
                     <h2>元数据管理</h2>
-                    <div style="display:flex;gap:8px;">
-                        <input type="text" id="metadataSearch" placeholder="搜索标题..." style="width:240px;padding:8px 12px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:13px;outline:none;">
-                        <select id="metadataType" style="padding:8px 12px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:13px;outline:none;">
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="text" id="metadataSearch" placeholder="搜索标题或文件名..." style="width:240px;padding:8px 12px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:13px;outline:none;">
+                        <select id="metadataLibType" style="padding:8px 12px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:13px;outline:none;">
                             <option value="">全部类型</option>
-                            <option value="movie">电影</option>
                             <option value="tv">剧集</option>
+                            <option value="movie">电影</option>
                             <option value="other">其他</option>
                         </select>
                         <button class="btn btn-sm btn-primary" id="metadataSearchBtn">搜索</button>
+                        <button class="btn btn-sm btn-outline" id="metadataUnmatchedBtn">未匹配文件</button>
+                        <button class="btn btn-sm btn-outline" id="metadataRefreshBtn" title="刷新列表">&#x21bb;</button>
                     </div>
                 </div>
-                <p class="section-desc">查看和编辑所有已匹配的元数据，支持手动修改和从 TMDB 重新获取</p>
-                <div id="metadataList"></div>
+                <div id="metadataTree" style="margin-top:16px;"></div>
             </section>
 
             <!-- 用户管理 -->
@@ -369,6 +370,12 @@ $user = auth()->getUser();
 
                     <button type="submit" class="btn btn-primary">保存设置</button>
                 </form>
+            </section>
+
+            <!-- 关于 -->
+            <section class="admin-section" id="tab-about">
+                <h2>关于</h2>
+                <div id="aboutContent"></div>
             </section>
         </main>
     </div>

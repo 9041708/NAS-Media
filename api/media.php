@@ -14,10 +14,15 @@ try {
             $genre = $_GET['genre'] ?? '';
             $sort = $_GET['sort'] ?? 'title';
             $search = $_GET['search'] ?? '';
+            $libraryId = (int)($_GET['library_id'] ?? 0);
 
             $where = ['1=1', '(SELECT COUNT(*) FROM media_files mf WHERE mf.media_id = mi.id) > 0'];
             $params = [];
 
+            if ($libraryId > 0) {
+                $where[] = 'EXISTS (SELECT 1 FROM media_files mf WHERE mf.media_id = mi.id AND mf.library_id = ?)';
+                $params[] = $libraryId;
+            }
             if ($type && $type !== 'all') {
                 $where[] = 'mi.type = ?';
                 $params[] = $type;
@@ -381,6 +386,171 @@ try {
             jsonResponse($items);
             break;
 
+        case 'media_tree':
+            auth()->requireAdmin();
+            $search = $_GET['search'] ?? '';
+            $libType = $_GET['lib_type'] ?? '';
+
+            $libraries = db()->fetchAll('SELECT * FROM libraries ORDER BY name');
+
+            $result = [];
+            foreach ($libraries as $lib) {
+                if ($libType && $lib['type'] !== $libType) continue;
+
+                $libNode = [
+                    'id' => (int)$lib['id'],
+                    'name' => $lib['name'],
+                    'path' => $lib['path'],
+                    'type' => $lib['type'],
+                    'children' => [],
+                    'unmatched' => [],
+                ];
+
+                if ($lib['type'] === 'tv') {
+                    $allFiles = db()->fetchAll(
+                        "SELECT mf.*, mi.id as media_id, mi.title as media_title, mi.year,
+                            mi.overview, mi.genres, mi.rating, mi.tmdb_id, mi.poster_path, mi.vip_only
+                         FROM media_files mf
+                         LEFT JOIN media_items mi ON mf.media_id = mi.id
+                         WHERE mf.library_id = ?
+                         ORDER BY mf.file_path",
+                        [$lib['id']]
+                    );
+
+                    $shows = [];
+                    $unmatched = [];
+                    foreach ($allFiles as $f) {
+                        if ($search && stripos($f['media_title'] ?? '', $search) === false
+                            && stripos($f['file_name'], $search) === false) continue;
+
+                        if (empty($f['media_id'])) {
+                            $unmatched[] = formatFileNodeForTree($f);
+                            continue;
+                        }
+
+                        $showDir = getShowDirFromPath($f['file_path'], $lib['path']);
+                        $showKey = $showDir ?: ($f['media_title'] ?: $f['file_name']);
+                        $miKey = $f['media_id'];
+
+                        if (!isset($shows[$miKey])) {
+                            $shows[$miKey] = [
+                                'id' => (int)$f['media_id'],
+                                'title' => $f['media_title'] ?: basename($showDir ?: dirname($f['file_path'])),
+                                'year' => $f['year'],
+                                'overview' => $f['overview'],
+                                'genres' => $f['genres'],
+                                'rating' => $f['rating'],
+                                'tmdb_id' => $f['tmdb_id'],
+                                'poster_path' => $f['poster_path'],
+                                'vip_only' => (int)($f['vip_only'] ?? 0),
+                                'seasons' => [],
+                            ];
+                        }
+
+                        $sn = (int)($f['season_number'] ?? 1);
+                        if (!isset($shows[$miKey]['seasons'][$sn])) {
+                            $shows[$miKey]['seasons'][$sn] = ['num' => $sn, 'episodes' => []];
+                        }
+                        $shows[$miKey]['seasons'][$sn]['episodes'][] = formatFileNodeForTree($f);
+                    }
+
+                    ksort($shows);
+                    foreach ($shows as &$show) {
+                        ksort($show['seasons']);
+                        $show['seasons'] = array_values($show['seasons']);
+                    }
+                    $libNode['children'] = array_values($shows);
+                    $libNode['unmatched'] = $unmatched;
+                } else {
+                    $allFiles = db()->fetchAll(
+                        "SELECT mf.*, mi.id as media_id, mi.title as media_title, mi.year,
+                            mi.overview, mi.genres, mi.rating, mi.tmdb_id, mi.poster_path, mi.vip_only
+                         FROM media_files mf
+                         LEFT JOIN media_items mi ON mf.media_id = mi.id
+                         WHERE mf.library_id = ?
+                         ORDER BY mf.file_path",
+                        [$lib['id']]
+                    );
+
+                    $matched = [];
+                    $unmatched = [];
+                    $grouped = [];
+                    foreach ($allFiles as $f) {
+                        if ($search && stripos($f['media_title'] ?? '', $search) === false
+                            && stripos($f['file_name'], $search) === false) continue;
+
+                        if (empty($f['media_id'])) {
+                            $unmatched[] = formatFileNodeForTree($f);
+                            continue;
+                        }
+
+                        $miKey = $f['media_id'];
+                        if (!isset($grouped[$miKey])) {
+                            $grouped[$miKey] = [
+                                'id' => (int)$f['media_id'],
+                                'title' => $f['media_title'] ?: basename(dirname($f['file_path'])),
+                                'year' => $f['year'],
+                                'overview' => $f['overview'],
+                                'genres' => $f['genres'],
+                                'rating' => $f['rating'],
+                                'tmdb_id' => $f['tmdb_id'],
+                                'poster_path' => $f['poster_path'],
+                                'vip_only' => (int)($f['vip_only'] ?? 0),
+                                'files' => [],
+                            ];
+                        }
+                        $grouped[$miKey]['files'][] = formatFileNodeForTree($f);
+                    }
+
+                    $libNode['children'] = array_values($grouped);
+                    $libNode['unmatched'] = $unmatched;
+                }
+
+                $result[] = $libNode;
+            }
+
+            jsonResponse($result);
+            break;
+
+        case 'media_tree_unmatched':
+            auth()->requireAdmin();
+            $files = db()->fetchAll(
+                "SELECT mf.*, l.name as library_name, l.id as library_id
+                 FROM media_files mf
+                 JOIN libraries l ON mf.library_id = l.id
+                 WHERE mf.media_id IS NULL
+                 ORDER BY mf.file_path
+                 LIMIT 500"
+            );
+
+            $grouped = [];
+            foreach ($files as $f) {
+                $libId = $f['library_id'];
+                if (!isset($grouped[$libId])) {
+                    $grouped[$libId] = [
+                        'library_id' => (int)$libId,
+                        'library_name' => $f['library_name'],
+                        'files' => [],
+                    ];
+                }
+                $grouped[$libId]['files'][] = [
+                    'id' => (int)$f['id'],
+                    'library_id' => (int)$f['library_id'],
+                    'media_id' => null,
+                    'file_name' => $f['file_name'],
+                    'file_path' => $f['file_path'],
+                    'file_size' => (int)$f['file_size'],
+                    'file_type' => $f['file_type'],
+                    'duration' => (int)$f['duration'],
+                    'resolution' => $f['resolution'],
+                    'season_number' => (int)($f['season_number'] ?? 0),
+                    'episode_number' => (int)($f['episode_number'] ?? 0),
+                ];
+            }
+
+            jsonResponse(array_values($grouped));
+            break;
+
         case 'update_metadata':
             if ($method !== 'POST') jsonResponse(['error' => '方法不允许'], 405);
             $input = json_decode(file_get_contents('php://input'), true);
@@ -596,4 +766,32 @@ try {
     }
 } catch (Exception $e) {
     jsonResponse(['error' => $e->getMessage()], 500);
+}
+
+function formatFileNodeForTree(array $f): array
+{
+    return [
+        'id' => (int)$f['id'],
+        'library_id' => (int)$f['library_id'],
+        'media_id' => $f['media_id'] ? (int)$f['media_id'] : null,
+        'file_name' => $f['file_name'],
+        'file_path' => $f['file_path'],
+        'file_size' => (int)$f['file_size'],
+        'file_type' => $f['file_type'],
+        'duration' => (int)$f['duration'],
+        'resolution' => $f['resolution'],
+        'season_number' => (int)($f['season_number'] ?? 0),
+        'episode_number' => (int)($f['episode_number'] ?? 0),
+    ];
+}
+
+function getShowDirFromPath(string $filePath, string $libraryPath): string
+{
+    $relPath = str_replace($libraryPath, '', $filePath);
+    $relPath = ltrim(str_replace('\\', '/', $relPath), '/');
+    $parts = explode('/', $relPath);
+    if (count($parts) >= 2) {
+        return $parts[0];
+    }
+    return '';
 }

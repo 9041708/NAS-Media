@@ -27,6 +27,16 @@ class FFmpeg
         }
     }
 
+    public function getFfmpegPath(): string
+    {
+        return $this->ffmpegPath;
+    }
+
+    public function getFfprobePath(): string
+    {
+        return $this->ffprobePath;
+    }
+
     public function probe(string $filePath): ?array
     {
         $cmd = sprintf(
