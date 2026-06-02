@@ -208,6 +208,38 @@ try {
             jsonResponse($items);
             break;
 
+        case 'homepage':
+            $user = auth()->getUser();
+            if (!$user) jsonResponse(['error' => '请先登录'], 401);
+
+            try {
+                $libraries = db()->fetchAll("SELECT * FROM libraries WHERE enabled = 1 ORDER BY COALESCE(sort_order, 0) ASC, name ASC");
+
+                $result = [];
+                foreach ($libraries as $lib) {
+                    $items = db()->fetchAll(
+                        "SELECT mi.id, mi.title, mi.type, mi.year, mi.poster_path, mi.rating, mi.genres
+                        FROM media_items mi 
+                        WHERE EXISTS (SELECT 1 FROM media_files mf WHERE mf.media_id = mi.id AND mf.library_id = ?)
+                        ORDER BY mi.created_at DESC 
+                        LIMIT 12",
+                        [$lib['id']]
+                    );
+                    if (!empty($items)) {
+                        $result[] = [
+                            'library_id' => (int)$lib['id'],
+                            'library_name' => $lib['name'],
+                            'library_type' => $lib['type'],
+                            'items' => $items,
+                        ];
+                    }
+                }
+                jsonResponse($result);
+            } catch (Exception $e) {
+                jsonResponse(['error' => '数据查询失败: ' . $e->getMessage()], 500);
+            }
+            break;
+
         case 'top_rated':
             $limit = min(50, max(1, (int)($_GET['limit'] ?? 12)));
             $items = db()->fetchAll(
@@ -548,7 +580,43 @@ try {
                 ];
             }
 
-            jsonResponse(array_values($grouped));
+            $bareItems = db()->fetchAll(
+                "SELECT mi.*, l.name as library_name, l.id as library_id
+                 FROM media_items mi
+                 JOIN media_files mf ON mf.media_id = mi.id
+                 JOIN libraries l ON mf.library_id = l.id
+                 WHERE (mi.poster_path IS NULL OR mi.poster_path = '') AND mi.overview IS NULL
+                 GROUP BY mi.id, l.id, l.name
+                 ORDER BY mi.title
+                 LIMIT 200"
+            );
+
+            $result = array_values($grouped);
+            if (!empty($bareItems)) {
+                $bareGrouped = [];
+                foreach ($bareItems as $item) {
+                    $libId = $item['library_id'];
+                    if (!isset($bareGrouped[$libId])) {
+                        $bareGrouped[$libId] = [
+                            'library_id' => (int)$libId,
+                            'library_name' => $item['library_name'] . ' (无元数据)',
+                            'files' => [],
+                            'bareItems' => [],
+                        ];
+                    }
+                    $bareGrouped[$libId]['bareItems'][] = [
+                        'id' => (int)$item['id'],
+                        'title' => $item['title'],
+                        'year' => $item['year'],
+                        'type' => $item['type'],
+                        'poster_path' => $item['poster_path'],
+                        'is_bare' => true,
+                    ];
+                }
+                $result = array_merge($result, array_values($bareGrouped));
+            }
+
+            jsonResponse($result);
             break;
 
         case 'update_metadata':
@@ -751,6 +819,44 @@ try {
             jsonResponse($items);
             break;
 
+        case 'scrape_meta':
+            if ($method !== 'POST') jsonResponse(['error' => '方法不允许'], 405);
+            auth()->requireAdmin();
+            $input = json_decode(file_get_contents('php://input'), true);
+            $mediaId = (int)($input['media_id'] ?? 0);
+            if (!$mediaId) jsonResponse(['error' => '缺少media_id'], 400);
+
+            $media = db()->fetchOne('SELECT * FROM media_items WHERE id = ?', [$mediaId]);
+            if (!$media) jsonResponse(['error' => '媒体不存在'], 404);
+
+            $title = $media['original_title'] ?: $media['title'];
+            $year = $media['year'];
+            $results = [];
+
+            if ($media['type'] === 'tv') {
+                $results = tmdb()->searchTv($title);
+            } else {
+                $results = tmdb()->searchMovie($title, $year);
+            }
+
+            if (empty($results)) jsonResponse(['error' => 'TMDB搜索无结果: ' . $title], 404);
+
+            $best = $results[0];
+            $details = $media['type'] === 'tv'
+                ? tmdb()->getTvDetails($best['id'])
+                : tmdb()->getMovieDetails($best['id']);
+
+            if (!$details) jsonResponse(['error' => 'TMDB获取详情失败'], 500);
+
+            $data = tmdb()->formatMovieData($details);
+            if ($media['type'] === 'tv') {
+                $data['title'] = $title;
+            }
+            db()->update('media_items', $data, 'id = ?', [$mediaId]);
+
+            jsonResponse(['success' => true, 'tmdb_id' => $data['tmdb_id'] ?? null]);
+            break;
+
         case 'collection_items':
             $cid = (int)($_GET['id'] ?? 0);
             if (!$cid) jsonResponse([]);
@@ -759,6 +865,45 @@ try {
                 [$cid]
             );
             jsonResponse($items);
+            break;
+
+        case 'media_tree_vip':
+            auth()->requireAdmin();
+            $libraryId = (int)($_GET['library_id'] ?? 0);
+            if (!$libraryId) jsonResponse(['error' => '缺少library_id'], 400);
+
+            $items = db()->fetchAll(
+                "SELECT mi.id, mi.title, mi.type, mi.year, mi.poster_path, mi.vip_only,
+                    (SELECT COUNT(*) FROM media_files mf WHERE mf.media_id = mi.id AND mf.library_id = ?) as file_count
+                 FROM media_items mi
+                 WHERE EXISTS (SELECT 1 FROM media_files mf WHERE mf.media_id = mi.id AND mf.library_id = ?)
+                 ORDER BY mi.title",
+                [$libraryId, $libraryId]
+            );
+            jsonResponse($items);
+            break;
+
+        case 'batch_vip':
+            if ($method !== 'POST') jsonResponse(['error' => '方法不允许'], 405);
+            auth()->requireAdmin();
+            $input = json_decode(file_get_contents('php://input'), true);
+            $mediaIds = $input['media_ids'] ?? [];
+            $vipOnly = (int)($input['vip_only'] ?? 0);
+
+            if (empty($mediaIds) || !is_array($mediaIds)) {
+                jsonResponse(['error' => '缺少media_ids'], 400);
+            }
+
+            $placeholders = implode(',', array_fill(0, count($mediaIds), '?'));
+            $params = array_map('intval', $mediaIds);
+            array_unshift($params, $vipOnly);
+
+            $updated = db()->query(
+                "UPDATE media_items SET vip_only = ? WHERE id IN ($placeholders)",
+                $params
+            );
+
+            jsonResponse(['success' => true, 'updated' => $updated->rowCount()]);
             break;
 
         default:

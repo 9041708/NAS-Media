@@ -6,6 +6,11 @@
     const $ = (sel) => document.querySelector(sel);
     const $$ = (sel) => document.querySelectorAll(sel);
 
+    function posterUrl(path, size) {
+        if (!path) return '';
+        return '/api/image.php?size=' + (size || 'w500') + '&path=' + encodeURIComponent(path);
+    }
+
     async function api(url, options = {}) {
         try {
             const res = await fetch(url, {
@@ -403,12 +408,12 @@
     // ===== 元数据管理（树形结构） =====
     let metaData = null;
     let metaExpanded = {};
-    let metaShowingUnmatched = false;
 
     async function loadMetadataTree(search = '', libType = '') {
         try {
             $('#metadataTree').innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>加载中...</p></div>';
             metaShowingUnmatched = false;
+            metaExpanded = {};
             let url = '/api/media.php?action=media_tree';
             if (search) url += '&search=' + encodeURIComponent(search);
             if (libType) url += '&lib_type=' + encodeURIComponent(libType);
@@ -428,6 +433,7 @@
         try {
             $('#metadataTree').innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>加载中...</p></div>';
             metaShowingUnmatched = true;
+            metaExpanded = {};
             const groups = await api('/api/media.php?action=media_tree_unmatched');
             if (!groups || groups.length === 0) {
                 $('#metadataTree').innerHTML = '<div class="empty-state"><h3>所有文件已匹配</h3><p>没有未匹配的文件</p></div>';
@@ -435,11 +441,12 @@
             }
             metaData = groups.map(g => ({
                 id: 'unmatched_' + g.library_id,
-                name: g.library_name + ' (未匹配)',
+                name: g.library_name + (g.bareItems ? ' (无元数据)' : ' (未匹配)'),
                 path: '',
                 type: 'unmatched',
                 children: [],
-                unmatched: g.files,
+                unmatched: g.files || [],
+                bareItems: g.bareItems || [],
                 _unmatchedGroup: true,
             }));
             renderMetadataTree();
@@ -453,7 +460,7 @@
         let html = '';
         metaData.forEach(lib => {
             const libKey = 'lib_' + lib.id;
-            const isLibExp = metaExpanded[libKey] !== false;
+            const isLibExp = metaExpanded[libKey] === true;
             const totalFiles = (lib.children || []).reduce((sum, c) => sum + (c.seasons ? c.seasons.reduce((s, se) => s + (se.episodes || []).length, 0) : (c.files || []).length), 0) + (lib.unmatched || []).length;
 
             html += `<div class="meta-tree-lib">
@@ -468,11 +475,33 @@
 
             if (lib._unmatchedGroup) {
                 html += renderUnmatchedFiles(lib.unmatched, libKey);
+                if (lib.bareItems && lib.bareItems.length > 0) {
+                    const bk = libKey + '_bare';
+                    const isBareExp = metaExpanded[bk] === true;
+                    html += `<div class="meta-tree-node meta-unmatched" data-key="${bk}" onclick="toggleMetaNode('${bk}')" style="background:rgba(245,158,11,0.06);">
+                        <span class="meta-tree-arrow">${isBareExp ? '▼' : '▶'}</span>
+                        <span class="meta-tree-icon">📭</span>
+                        <span class="meta-tree-label">无海报/元数据的影视</span>
+                        <span class="meta-tree-count">${lib.bareItems.length} 部</span>
+                    </div>
+                    <div class="meta-tree-children" style="${isBareExp ? '' : 'display:none'}">
+                        ${lib.bareItems.map(b => `
+                            <div class="meta-tree-node" style="margin-left:20px;padding:6px 12px;font-size:13px;display:flex;align-items:center;gap:8px;">
+                                <span>🎬</span>
+                                <span>${escHtml(b.title)} ${b.year ? '(' + b.year + ')' : ''}</span>
+                                <span class="meta-tree-badge">${b.type === 'tv' ? '剧集' : '电影'}</span>
+                                <span class="meta-tree-actions" onclick="event.stopPropagation()">
+                                    <button class="btn btn-xs btn-primary" onclick="refreshMetaInline(${b.id})" title="刷新元数据">🔄</button>
+                                    <a href="/show.php?id=${b.id}" class="btn btn-xs btn-outline" title="详情页" target="_blank">🔗</a>
+                                </span>
+                            </div>`).join('')}
+                    </div>`;
+                }
             } else {
                 lib.children.forEach(child => {
                     const childKey = libKey + '_child_' + child.id;
-                    const isChildExp = metaExpanded[childKey] !== false;
-                    let childIcon = child.poster_path ? `<img src="https://image.tmdb.org/t/p/w92${child.poster_path}" class="meta-tree-poster" alt="">` : '<span class="meta-tree-icon">🎬</span>';
+                    const isChildExp = metaExpanded[childKey] === true;
+                    let childIcon = child.poster_path ? `<img src="/api/image.php?size=w92&path=${encodeURIComponent(child.poster_path)}" class="meta-tree-poster" alt="">` : '<span class="meta-tree-icon">🎬</span>';
 
                     html += `<div class="meta-tree-node" data-key="${childKey}" onclick="toggleMetaNode('${childKey}')">
                         <span class="meta-tree-arrow">${isChildExp ? '▼' : '▶'}</span>
@@ -490,7 +519,7 @@
 
                     if (child.seasons) {
                         child.seasons.forEach(season => {
-                            html += `<div class="meta-tree-season">📂 第 ${season.num} 季 (${season.episodes.length} 集)</div>`;
+                            html += `<div class="meta-tree-season">📂 ${season.num == 0 ? '特别篇 / 番外' : '第 ' + season.num + ' 季'} (${season.episodes.length} 集)</div>`;
                             html += renderEpisodeFiles(season.episodes);
                         });
                     } else if (child.files) {
@@ -536,7 +565,7 @@
 
     function renderUnmatchedFiles(files, parentKey) {
         const uk = parentKey + '_unmatched';
-        const isExp = metaExpanded[uk] !== false;
+        const isExp = metaExpanded[uk] === true;
         return `<div class="meta-tree-node meta-unmatched" data-key="${uk}" onclick="toggleMetaNode('${uk}')">
             <span class="meta-tree-arrow">${isExp ? '▼' : '▶'}</span>
             <span class="meta-tree-icon">⚠️</span>
@@ -630,6 +659,8 @@
         $('#editMetaGenres').value = d.genres || '';
         $('#editMetaTmdbId').value = d.tmdb || '';
         $('#editMetaVip').checked = (d.vip == '1');
+        const tmdbLink = $('#editMetaTmdbLink');
+        if (tmdbLink) tmdbLink.href = 'https://www.themoviedb.org/search?query=' + encodeURIComponent(d.title || '');
         $('#editMetaModal').classList.add('active');
     }
 
@@ -724,7 +755,7 @@
             }
             container.innerHTML = results.map(r => `
                 <div class="match-result-item" data-tmdb="${r.tmdb_id}">
-                    <img src="${r.poster_path ? 'https://image.tmdb.org/t/p/w92' + r.poster_path : '/assets/images/no-poster.svg'}" alt="">
+                    <img src="${r.poster_path ? '/api/image.php?size=w92&path=' + encodeURIComponent(r.poster_path) : '/assets/images/no-poster.svg'}" alt="">
                     <div>
                         <div class="match-title">${escHtml(r.title)} ${r.year ? `(${r.year})` : ''}</div>
                         <div class="match-meta">评分: ${r.rating} | ${escHtml(r.overview || '').substring(0, 80)}</div>
@@ -768,6 +799,7 @@
             if ($('#settingPosterLang')) $('#settingPosterLang').value = settings.poster_lang || 'zh-CN';
             if ($('#settingScanInterval')) $('#settingScanInterval').value = settings.scan_interval || '3600';
             if ($('#settingTheme')) $('#settingTheme').value = settings.theme || 'dark';
+            if ($('#settingRemoteAccess')) $('#settingRemoteAccess').value = settings.remote_access_enabled || '0';
             if ($('#settingFfmpegPath')) $('#settingFfmpegPath').value = settings.ffmpeg_path || 'ffmpeg';
             if ($('#settingFfprobePath')) $('#settingFfprobePath').value = settings.ffprobe_path || 'ffprobe';
             if ($('#settingTranscodeEnabled')) $('#settingTranscodeEnabled').value = settings.transcode_enabled || '0';
@@ -907,6 +939,16 @@
         });
     }
 
+    if ($('#settingRemoteAccess')) {
+        $('#settingRemoteAccess').addEventListener('change', (e) => {
+            if (e.target.value === '1') {
+                if (!confirm('⚠️ 风险提示\n\n外网访问需要具备相关资质，且涉及影视作品版权问题。\n\n开启外网访问意味着您的媒体库将通过互联网公开，请确保：\n1. 您拥有合法的影视资源使用资质\n2. 您了解并愿意承担相关版权法律风险\n3. 已配置好防火墙和安全策略\n\n点击"确定"继续开启，点击"取消"放弃。')) {
+                    e.target.value = '0';
+                }
+            }
+        });
+    }
+
     // 页面加载时应用已保存的主题
     setTimeout(async () => {
         try {
@@ -967,6 +1009,7 @@
             poster_lang: $('#settingPosterLang').value,
             scan_interval: $('#settingScanInterval').value,
             theme: $('#settingTheme').value,
+            remote_access_enabled: $('#settingRemoteAccess')?.value || '0',
         };
         if ($('#settingFfmpegPath')) data.ffmpeg_path = $('#settingFfmpegPath').value;
         if ($('#settingFfprobePath')) data.ffprobe_path = $('#settingFfprobePath').value;
@@ -1019,6 +1062,7 @@
                     </div>
                     <div class="lib-actions">
                         <button class="btn btn-sm btn-outline edit-user-btn" data-id="${u.id}" data-name="${escHtml(u.username)}" data-role="${u.role}" data-groupid="${u.group_id}" data-display="${escHtml(u.display_name || '')}">编辑</button>
+                        <button class="btn btn-sm btn-outline perm-user-btn" data-id="${u.id}" data-username="${escHtml(u.username)}" data-groupid="${u.group_id}">权限</button>
                         <button class="btn btn-sm btn-outline delete-user-btn" data-id="${u.id}">删除</button>
                     </div>
                 </div>`;
@@ -1055,6 +1099,44 @@
                     });
                     const card = btn.closest('.library-card');
                     card.after(wrapper);
+                });
+            });
+
+            $$('.perm-user-btn').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const userId = parseInt(btn.dataset.id);
+                    const username = btn.dataset.username;
+                    const curGroupId = parseInt(btn.dataset.groupid);
+                    const groupOptions = groups.map(g => `<option value="${g.id}" ${g.id === curGroupId ? 'selected' : ''}>${escHtml(g.name)}</option>`).join('');
+
+                    const overlay = document.createElement('div');
+                    overlay.className = 'modal-overlay';
+                    overlay.style.cssText = 'display:flex;z-index:3000;';
+                    overlay.innerHTML = `<div class="modal-content" style="max-width:400px;padding:24px;">
+                        <div class="modal-header" style="margin-bottom:16px;">
+                            <h3>调整 ${escHtml(username)} 的权限</h3>
+                            <button class="modal-close" style="position:static;float:right;" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+                        </div>
+                        <div class="form-group">
+                            <label>权限组</label>
+                            <select id="quickPermGroup" style="width:100%;padding:10px 14px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px;outline:none;">${groupOptions}</select>
+                        </div>
+                        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+                            <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">取消</button>
+                            <button class="btn btn-primary" id="saveQuickPerm">保存</button>
+                        </div>
+                    </div>`;
+                    document.body.appendChild(overlay);
+
+                    overlay.querySelector('#saveQuickPerm').addEventListener('click', async () => {
+                        const newGroupId = parseInt(overlay.querySelector('#quickPermGroup').value);
+                        await api('/api/auth.php?action=update_user', { method: 'POST', body: JSON.stringify({ id: userId, group_id: newGroupId }) });
+                        toast('权限已更新');
+                        overlay.remove();
+                        loadUsers();
+                    });
+
+                    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
                 });
             });
         } catch (e) {
@@ -1204,7 +1286,7 @@
                 return;
             }
             list.innerHTML = items.map(m => {
-                const poster = m.poster_path ? `<img src="https://image.tmdb.org/t/p/w92${m.poster_path}" style="width:36px;height:52px;object-fit:cover;border-radius:3px;">` : '<div style="width:36px;height:52px;background:var(--bg-hover);border-radius:3px;"></div>';
+                const poster = m.poster_path ? `<img src="/api/image.php?size=w92&path=${encodeURIComponent(m.poster_path)}" style="width:36px;height:52px;object-fit:cover;border-radius:3px;">` : '<div style="width:36px;height:52px;background:var(--bg-hover);border-radius:3px;"></div>';
                 return `<div class="tc-media-item" data-id="${m.id}" data-title="${escHtml(m.title)}">${poster}<div style="flex:1;min-width:0;"><div style="font-size:13px;color:var(--text-primary);">${escHtml(m.title)}</div><div style="font-size:11px;color:var(--text-muted);">${m.type === 'tv' ? '剧集' : '电影'} · ${m.file_count || 0} 个文件</div></div></div>`;
             }).join('');
 
@@ -1307,7 +1389,7 @@
                 const ago = getTimeAgo(s.last_heartbeat);
                 return `
                 <div class="library-card" style="gap:16px;">
-                    ${s.poster_path ? `<img src="https://image.tmdb.org/t/p/w92${s.poster_path}" style="width:56px;border-radius:6px;flex-shrink:0;">` : ''}
+                    ${s.poster_path ? `<img src="/api/image.php?size=w92&path=${encodeURIComponent(s.poster_path)}" style="width:56px;border-radius:6px;flex-shrink:0;">` : ''}
                     <div class="lib-info" style="flex:1;">
                         <div class="lib-name">${escHtml(s.display_name || s.username)}</div>
                         <div style="font-size:14px;margin:4px 0;">${escHtml(s.media_title || '未知')}</div>
@@ -1529,6 +1611,7 @@
             if (tab === 'notify') loadNotifyUsers();
             if (tab === 'settings') loadSettings();
             if (tab === 'about') loadAbout();
+            if (tab === 'vip') loadVipPage();
         });
     });
 
@@ -1556,6 +1639,164 @@
             if (!sel) return;
             sel.innerHTML = groups.map(g => `<option value="${g.id}">${escHtml(g.name)}</option>`).join('');
         } catch (e) {}
+    }
+
+    // ===== VIP管理 =====
+    let vipMediaData = [];
+
+    async function loadVipPage() {
+        const libs = await api('/api/scan.php?action=list_libraries');
+        const sel = $('#vipLibrarySelect');
+        if (!sel) return;
+        sel.innerHTML = '<option value="">-- 选择媒体库 --</option>';
+        libs.forEach(l => {
+            sel.innerHTML += `<option value="${l.id}">${escHtml(l.name)} (${l.type === 'tv' ? '剧集' : l.type === 'movie' ? '电影' : '其他'})</option>`;
+        });
+    }
+
+    async function loadVipMedia() {
+        const libId = parseInt($('#vipLibrarySelect')?.value || 0);
+        if (!libId) { toast('请先选择媒体库', 'error'); return; }
+
+        const container = $('#vipMediaList');
+        if (!container) return;
+        container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>加载中...</p></div>';
+
+        try {
+            const tree = await api('/api/media.php?action=media_tree_vip&library_id=' + libId);
+            vipMediaData = tree || [];
+            renderVipList();
+        } catch (e) {
+            container.innerHTML = '<div style="color:#ff6b6b;padding:20px;">加载失败: ' + escHtml(e.message || '') + '</div>';
+        }
+    }
+
+    function renderVipList() {
+        const container = $('#vipMediaList');
+        if (!container) return;
+
+        if (!vipMediaData || vipMediaData.length === 0) {
+            container.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;font-size:13px;">该媒体库暂无内容</div>';
+            $('#vipCount').textContent = '';
+            return;
+        }
+
+        let html = '';
+        vipMediaData.forEach(item => {
+            const isVip = item.vip_only == 1;
+            const posterImg = item.poster_path
+                ? `<img src="/api/image.php?size=w92&path=${encodeURIComponent(item.poster_path)}" style="width:40px;height:56px;object-fit:cover;border-radius:4px;flex-shrink:0;">`
+                : '<div style="width:40px;height:56px;background:var(--bg-hover);border-radius:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--text-muted);">🎬</div>';
+            html += `
+                <div class="vip-media-item" data-id="${item.id}" style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;margin-bottom:4px;background:${isVip ? 'rgba(229,9,20,0.08)' : 'rgba(255,255,255,0.02)'};border:1px solid ${isVip ? 'rgba(229,9,20,0.3)' : 'var(--border)'};cursor:pointer;" onclick="toggleVipItem(this)">
+                    <input type="checkbox" class="vip-check" data-id="${item.id}" ${isVip ? 'checked' : ''} onclick="event.stopPropagation();" style="cursor:pointer;">
+                    ${posterImg}
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-size:13px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(item.title)}</div>
+                        <div style="font-size:11px;color:var(--text-muted);">${item.type === 'tv' ? '剧集' : '电影'} · ${item.year || ''} ${isVip ? '<span style="color:#e50914;">· VIP</span>' : ''}</div>
+                    </div>
+                </div>`;
+        });
+
+        container.innerHTML = html;
+        const vipCount = vipMediaData.filter(i => i.vip_only == 1).length;
+        $('#vipCount').textContent = `共 ${vipMediaData.length} 部，其中 VIP: ${vipCount} 部`;
+    }
+
+    window.toggleVipItem = function(el) {
+        const cb = el.querySelector('.vip-check');
+        if (cb) cb.checked = !cb.checked;
+    };
+
+    if ($('#vipSelectAll')) {
+        $('#vipSelectAll').addEventListener('change', (e) => {
+            document.querySelectorAll('#vipMediaList .vip-check').forEach(cb => {
+                cb.checked = e.target.checked;
+            });
+        });
+    }
+
+    if ($('#vipLoadBtn')) {
+        $('#vipLoadBtn').addEventListener('click', loadVipMedia);
+    }
+
+    if ($('#vipApplyBtn')) {
+        $('#vipApplyBtn').addEventListener('click', async () => {
+            const libId = parseInt($('#vipLibrarySelect')?.value || 0);
+            if (!libId) { toast('请先选择媒体库', 'error'); return; }
+
+            const action = $('#vipActionSelect')?.value || 'set';
+            const checks = document.querySelectorAll('#vipMediaList .vip-check');
+            const selectedIds = [];
+            checks.forEach(cb => {
+                if (cb.checked) selectedIds.push(parseInt(cb.dataset.id));
+            });
+
+            if (selectedIds.length === 0) {
+                if (!confirm('没有勾选任何影片，将对当前媒体库全部影片执行"' + (action === 'set' ? '设为VIP' : '取消VIP') + '"操作？')) return;
+                vipMediaData.forEach(item => selectedIds.push(item.id));
+            }
+
+            if (!confirm('确定对选中的 ' + selectedIds.length + ' 部影片执行"' + (action === 'set' ? '设为VIP' : '取消VIP') + '"操作？')) return;
+
+            showVipProgress('正在批量更新...', 0, selectedIds.length);
+            let completed = 0;
+            const batchSize = 50;
+
+            try {
+                for (let i = 0; i < selectedIds.length; i += batchSize) {
+                    const batch = selectedIds.slice(i, i + batchSize);
+                    await api('/api/media.php?action=batch_vip', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            media_ids: batch,
+                            vip_only: action === 'set' ? 1 : 0,
+                        }),
+                    });
+                    completed += batch.length;
+                    showVipProgress('正在批量更新...', completed, selectedIds.length);
+                }
+                toast('已更新 ' + completed + ' 部影片');
+                hideVipProgress();
+                loadVipMedia();
+            } catch (e) {
+                toast('操作失败: 网络错误', 'error');
+                hideVipProgress();
+            }
+        });
+    }
+
+    function showVipProgress(text, current, total) {
+        let bar = $('#vipProgressBar');
+        if (!bar) {
+            const container = document.getElementById('vipMediaList')?.parentElement;
+            if (!container) return;
+            bar = document.createElement('div');
+            bar.id = 'vipProgressBar';
+            bar.innerHTML = `
+                <div style="margin:12px 0;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:16px;">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px;">
+                        <span id="vipProgressText">${text}</span>
+                        <span id="vipProgressPercent" style="color:#e50914;font-weight:600;">0%</span>
+                    </div>
+                    <div style="height:6px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;">
+                        <div id="vipProgressFill" style="height:100%;background:#e50914;border-radius:3px;width:0%;transition:width 0.3s;"></div>
+                    </div>
+                </div>`;
+            container.insertBefore(bar, container.firstChild);
+        }
+        const pct = total > 0 ? Math.round(current / total * 100) : 0;
+        const textEl = $('#vipProgressText');
+        const pctEl = $('#vipProgressPercent');
+        const fillEl = $('#vipProgressFill');
+        if (textEl) textEl.textContent = text;
+        if (pctEl) pctEl.textContent = pct + '%';
+        if (fillEl) fillEl.style.width = pct + '%';
+    }
+
+    function hideVipProgress() {
+        const bar = $('#vipProgressBar');
+        if (bar) bar.remove();
     }
 
     // Init

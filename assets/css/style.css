@@ -108,6 +108,14 @@ a:hover {
     background: rgba(255, 255, 255, 0.08);
 }
 
+.hamburger-btn {
+    display: none;
+}
+
+.mobile-nav-overlay {
+    display: none;
+}
+
 .nav-right {
     display: flex;
     align-items: center;
@@ -709,11 +717,45 @@ a:hover {
 
 @media (max-width: 768px) {
     .nav-links { display: none; }
-    .search-box input { width: 120px; }
+    .hamburger-btn { display: flex; }
+    .search-box input { width: 100px; }
     .hero-section { height: 300px; }
     .hero-slide .hero-info { left: 20px; bottom: 20px; }
     .hero-slide .hero-info h2 { font-size: 24px; }
-    .poster-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+    .poster-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+    .poster-wall { padding: 16px; }
+    .filter-bar { padding: 12px 16px; flex-direction: column; gap: 8px; }
+    .filter-group { flex-wrap: wrap; }
+    .nav-right { gap: 4px; }
+    .user-name { font-size: 12px; padding: 4px 8px; }
+
+    .mobile-nav-overlay {
+        display: none;
+        position: fixed;
+        top: 60px;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(15, 15, 35, 0.98);
+        z-index: 999;
+        flex-direction: column;
+        padding: 16px;
+        gap: 4px;
+        backdrop-filter: blur(20px);
+    }
+    .mobile-nav-overlay.show { display: flex; }
+    .mobile-nav-overlay a {
+        padding: 14px 16px;
+        border-radius: 8px;
+        font-size: 16px;
+        color: var(--text-secondary);
+        text-decoration: none;
+        transition: background 0.2s;
+    }
+    .mobile-nav-overlay a:hover, .mobile-nav-overlay a.active {
+        background: rgba(255,255,255,0.08);
+        color: #fff;
+    }
 }
 
 /* 滚动条 */

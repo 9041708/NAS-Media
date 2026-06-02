@@ -534,6 +534,10 @@
     border-left: 4px solid var(--accent);
 }
 
+.vip-media-item:hover {
+    background: rgba(255,255,255,0.06) !important;
+}
+
 @media (max-width: 768px) {
     .admin-sidebar {
         width: 60px;

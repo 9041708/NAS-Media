@@ -1,6 +1,8 @@
 (() => {
     'use strict';
 
+    try {
+
     const PD = window.__PLAYER_DATA__;
     const $ = (s) => document.querySelector(s);
     const $$ = (s) => document.querySelectorAll(s);
@@ -203,6 +205,23 @@
             iconMute.style.display = 'none';
         }
         volumeSlider.value = video.muted ? 0 : video.volume;
+    }
+
+    const unmuteHint = $('#unmuteHint');
+    if (unmuteHint && video.muted) {
+        unmuteHint.style.display = 'block';
+        const onUnmute = (e) => {
+            e.stopPropagation();
+            video.muted = false;
+            video.play();
+            updateVolumeIcon();
+            unmuteHint.style.display = 'none';
+            video.removeEventListener('click', onUnmute);
+            unmuteHint.removeEventListener('click', onUnmute);
+        };
+        video.addEventListener('click', onUnmute);
+        unmuteHint.addEventListener('click', onUnmute);
+        setTimeout(() => { if (unmuteHint.style.display !== 'none') unmuteHint.style.display = 'none'; }, 8000);
     }
 
     // ===== 倍速 =====
@@ -1004,19 +1023,218 @@
                 btn.disabled = false;
             }
         } catch (e) {
-            btn.textContent = '失败';
+            btn.textContent = orig;
             btn.disabled = false;
         }
     });
 
-    function escHtmlP(str) {
-        const div = document.createElement('div');
-        div.textContent = str || '';
-        return div.innerHTML;
+    // ===== 弹幕系统 =====
+    const danmakuCanvas = $('#danmakuCanvas');
+    const danmakuInput = $('#danmakuInput');
+    const danmakuText = $('#danmakuText');
+    const danmakuSend = $('#danmakuSend');
+    const danmakuColor = $('#danmakuColor');
+    const danmakuType = $('#danmakuType');
+    const danmakuBtn = $('#danmakuBtn');
+    const danmakuLabel = $('#danmakuLabel');
+
+    let danmakuEnabled = false;
+    let danmakuData = [];
+    let danmakuPool = [];
+    let danmakuCtx = null;
+    let danmakuAnimId = null;
+    const DANMAKU_COLORS = ['#ffffff','#ff4444','#44ff44','#4444ff','#ffff44','#ff44ff'];
+    const CANVAS_FONT_SIZE = 18;
+
+    function initDanmakuCanvas() {
+        if (!danmakuCanvas) return;
+        const videoArea = $('#videoArea');
+        danmakuCanvas.width = videoArea.offsetWidth;
+        danmakuCanvas.height = videoArea.offsetHeight;
+        danmakuCtx = danmakuCanvas.getContext('2d');
     }
 
-    function escAttrP(str) {
-        return (str || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    async function loadDanmaku() {
+        try {
+            const res = await fetch(`/api/danmaku.php?action=list&file_id=${PD.fileId}`);
+            danmakuData = await res.json();
+            if (!Array.isArray(danmakuData)) danmakuData = [];
+        } catch (e) { danmakuData = []; }
+    }
+
+    function renderDanmakuFrame() {
+        if (!danmakuEnabled || !danmakuCtx) return;
+        const ctx = danmakuCtx;
+        const w = danmakuCanvas.width;
+        const h = danmakuCanvas.height;
+        const t = video.currentTime * 1000;
+
+        ctx.clearRect(0, 0, w, h);
+
+        danmakuPool = danmakuPool.filter(d => d.x > -d.width - 50 || d.opacity > 0);
+
+        const lanes = new Array(Math.floor(h / 32)).fill(0);
+
+        for (const d of danmakuData) {
+            const dt = d.time_pos * 1000;
+            if (Math.abs(t - dt) < 200 && !d._spawned) {
+                d._spawned = true;
+                const text = d.content;
+                ctx.font = (d.font_size || CANVAS_FONT_SIZE) + 'px sans-serif';
+                const m = ctx.measureText(text);
+
+                let lane = 0;
+                let minTime = Infinity;
+                for (let i = 0; i < lanes.length; i++) {
+                    if (lanes[i] < minTime) { minTime = lanes[i]; lane = i; }
+                }
+                lanes[lane] = t + 6000;
+
+                const y = 50 + lane * 32 + Math.random() * 10;
+
+                danmakuPool.push({
+                    text: text,
+                    color: d.color || '#ffffff',
+                    type: d.type || 'scroll',
+                    x: w,
+                    y: y,
+                    width: m.width,
+                    opacity: 1,
+                    fontSize: d.font_size || CANVAS_FONT_SIZE,
+                });
+            }
+        }
+
+        for (const d of danmakuPool) {
+            ctx.globalAlpha = d.opacity;
+            ctx.fillStyle = d.color;
+            ctx.font = d.fontSize + 'px sans-serif';
+            ctx.shadowColor = 'rgba(0,0,0,0.8)';
+            ctx.shadowBlur = 2;
+            ctx.fillText(d.text, d.x, d.y);
+            ctx.shadowBlur = 0;
+
+            if (d.type === 'scroll') {
+                d.x -= 2;
+            } else if (d.type === 'top' || d.type === 'bottom') {
+                d.opacity -= 0.003;
+            }
+        }
+
+        danmakuAnimId = requestAnimationFrame(renderDanmakuFrame);
+    }
+
+    function toggleDanmaku() {
+        danmakuEnabled = !danmakuEnabled;
+        if (danmakuEnabled) {
+            danmakuInput.style.display = 'flex';
+            danmakuLabel.style.color = 'var(--accent)';
+            danmakuCanvas.style.display = 'block';
+            const danmakuImport = $('#danmakuImport');
+            if (danmakuImport) danmakuImport.style.display = 'block';
+            danmakuData.forEach(d => d._spawned = false);
+            danmakuPool = [];
+            if (!danmakuAnimId) renderDanmakuFrame();
+            if (!danmakuLoadTimer) startDanmakuPolling();
+            setTimeout(() => danmakuText?.focus(), 100);
+        } else {
+            danmakuInput.style.display = 'none';
+            danmakuLabel.style.color = '';
+            danmakuCanvas.style.display = 'none';
+            const danmakuImport = $('#danmakuImport');
+            if (danmakuImport) danmakuImport.style.display = 'none';
+            if (danmakuAnimId) { cancelAnimationFrame(danmakuAnimId); danmakuAnimId = null; }
+            if (danmakuCtx) danmakuCtx.clearRect(0, 0, danmakuCanvas.width, danmakuCanvas.height);
+            stopDanmakuPolling();
+        }
+    }
+
+    let danmakuLoadTimer = null;
+    function startDanmakuPolling() {
+        stopDanmakuPolling();
+        danmakuLoadTimer = setInterval(loadDanmaku, 5000);
+    }
+    function stopDanmakuPolling() {
+        if (danmakuLoadTimer) { clearInterval(danmakuLoadTimer); danmakuLoadTimer = null; }
+    }
+
+    async function sendDanmaku() {
+        const content = danmakuText.value.trim();
+        if (!content) return;
+        try {
+            const res = await fetch('/api/danmaku.php?action=send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    file_id: PD.fileId,
+                    content: content,
+                    time_pos: video.currentTime,
+                    color: danmakuColor.value,
+                    type: danmakuType.value,
+                }),
+            });
+            const data = await res.json();
+            if (data.success && data.danmaku) {
+                danmakuData.push(data.danmaku);
+            }
+            danmakuText.value = '';
+            danmakuText.focus();
+        } catch (e) { /* ignore */ }
+    }
+
+    if (danmakuCanvas) {
+        initDanmakuCanvas();
+        loadDanmaku();
+        window.addEventListener('resize', initDanmakuCanvas);
+
+        if (danmakuBtn) danmakuBtn.addEventListener('click', toggleDanmaku);
+        if (danmakuSend) danmakuSend.addEventListener('click', sendDanmaku);
+        if (danmakuText) danmakuText.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); sendDanmaku(); }
+        });
+
+        const bilibiliImportBtn = $('#bilibiliImportBtn');
+        const bilibiliCid = $('#bilibiliCid');
+        if (bilibiliImportBtn && bilibiliCid) {
+            bilibiliImportBtn.addEventListener('click', () => bilibiliImport(bilibiliCid.value.trim()));
+            bilibiliCid.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); bilibiliImport(bilibiliCid.value.trim()); }
+            });
+        }
+
+        video.addEventListener('seeked', () => {
+            danmakuData.forEach(d => d._spawned = false);
+            danmakuPool = [];
+        });
+    }
+
+    // ===== B站弹幕导入 =====
+    async function bilibiliImport(cid) {
+        if (!cid) { alert('请输入B站视频cid'); return; }
+        try {
+            const res = await fetch('/api/danmaku.php?action=bilibili_import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file_id: PD.fileId, cid: String(cid) }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert('成功导入 ' + data.count + ' 条弹幕');
+                danmakuData = [];
+                loadDanmaku();
+            } else {
+                alert('导入失败: ' + (data.error || '未知错误'));
+            }
+        } catch (e) {
+            alert('导入失败: 网络错误');
+        }
+    }
+
+    window.bilibiliImport = bilibiliImport;
+
+    } catch (e) {
+        console.error('播放器初始化错误:', e);
+        alert('播放器加载失败: ' + e.message + '\n请刷新页面重试');
     }
 
 })();

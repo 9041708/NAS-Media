@@ -10,13 +10,19 @@ $mediaId = (int)($_GET['media'] ?? 0);
 
 if (!$fileId && !$mediaId) { header('Location: /index.php'); exit; }
 
+$user = auth()->getUser();
+if (!$user) {
+    header('Location: /login.php?redirect=' . urlencode($_SERVER['REQUEST_URI']));
+    exit;
+}
+
 if (!$fileId && $mediaId) {
     $file = db()->fetchOne('SELECT * FROM media_files WHERE media_id = ? ORDER BY file_name LIMIT 1', [$mediaId]);
     if ($file) $fileId = $file['id'];
 }
 
 $file = db()->fetchOne(
-    'SELECT mf.*, mi.title, mi.year, mi.poster_path, mi.overview, mi.genres, mi.rating, mi.type as media_type, mi.id as media_item_id
+    'SELECT mf.*, mi.title, mi.year, mi.poster_path, mi.overview, mi.genres, mi.rating, mi.type as media_type, mi.id as media_item_id, mi.tmdb_id, mi.vip_only
      FROM media_files mf
      LEFT JOIN media_items mi ON mf.media_id = mi.id
      WHERE mf.id = ?',
@@ -26,7 +32,6 @@ $file = db()->fetchOne(
 if (!$file) { header('Location: /index.php'); exit; }
 
 $playbackError = '';
-$user = auth()->getUser();
 if ($user) {
     $group = db()->fetchOne('SELECT * FROM user_groups WHERE id = ?', [$user['group_id'] ?? 1]);
     $permissions = $group ? json_decode($group['permissions'] ?? '{}', true) : [];
@@ -34,8 +39,7 @@ if ($user) {
     $episodeLimit = (int)($permissions['episode_limit'] ?? 0);
     $movieMinutesLimit = (int)($permissions['movie_minutes_limit'] ?? 0);
 
-    $mediaItem = db()->fetchOne('SELECT * FROM media_items WHERE id = ?', [$file['media_item_id'] ?? 0]);
-    $isVipOnly = $mediaItem && ($mediaItem['vip_only'] ?? 0);
+    $isVipOnly = $file['vip_only'] ?? 0;
 
     if ($isVipOnly && !$canSeeAll) {
         $playbackError = '该内容仅限 VIP 用户观看';
@@ -124,16 +128,21 @@ $siteName = getSetting('site_name', 'NAS影库');
     <div class="player-container" id="playerContainer">
         <!-- 顶部栏 -->
         <div class="player-topbar" id="playerTopbar">
-            <a href="#" class="back-btn" onclick="goBack();return false;">
+            <a href="#" class="back-btn" onclick="goBack();return false;" title="返回首页">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
             </a>
-            <h1 class="player-title"><?= e($file['title'] ?: $file['file_name']) ?></h1>
-            <div class="topbar-right"></div>
+            <div class="player-title-area">
+                <h1 class="player-title"><?= e($file['title'] ?: $file['file_name']) ?></h1>
+                <?php if ($file['media_type'] === 'tv'): ?>
+                    <span class="player-epinfo">第<?= (int)($file['season_number'] ?? 1) ?>季 第<?= (int)($file['episode_number'] ?? 0) ?: '?' ?>集</span>
+                    <span class="player-epname" id="playerEpName"></span>
+                <?php endif; ?>
+            </div>
         </div>
 
         <!-- 视频区 -->
         <div class="video-area" id="videoArea">
-            <video id="videoPlayer" preload="auto">
+            <video id="videoPlayer" preload="auto" autoplay muted playsinline>
                 <source src="/api/stream.php?id=<?= $fileId ?>" type="<?= getVideoMimeType($file['file_type']) ?>">
             </video>
 
@@ -171,6 +180,45 @@ $siteName = getSetting('site_name', 'NAS影库');
             <!-- 中央播放/暂停按钮 -->
             <div class="center-play-btn" id="centerPlayBtn" style="display:none;">
                 <svg width="64" height="64" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </div>
+
+            <!-- 静音提示 -->
+            <div class="unmute-hint" id="unmuteHint" style="display:none;position:absolute;bottom:120px;left:50%;transform:translateX(-50%);z-index:50;">
+                <button class="btn btn-primary btn-sm" style="padding:10px 24px;font-size:14px;border-radius:20px;white-space:nowrap;">
+                    🔇 点击取消静音
+                </button>
+            </div>
+
+            <!-- 弹幕层 -->
+            <canvas class="danmaku-canvas" id="danmakuCanvas"></canvas>
+
+            <!-- 弹幕输入 -->
+            <div class="danmaku-input" id="danmakuInput" style="display:none;">
+                <input type="text" id="danmakuText" placeholder="发送弹幕..." maxlength="100">
+                <select id="danmakuColor" title="颜色">
+                    <option value="#ffffff">⚪</option>
+                    <option value="#ff4444">🔴</option>
+                    <option value="#44ff44">🟢</option>
+                    <option value="#4444ff">🔵</option>
+                    <option value="#ffff44">🟡</option>
+                    <option value="#ff44ff">🟣</option>
+                </select>
+                <select id="danmakuType" title="类型">
+                    <option value="scroll">滚动</option>
+                    <option value="top">顶部</option>
+                    <option value="bottom">底部</option>
+                </select>
+                <button id="danmakuSend">发送</button>
+                <span style="color:rgba(255,255,255,0.3);font-size:11px;margin-left:4px;white-space:nowrap;">回车发送</span>
+            </div>
+
+            <!-- B站弹幕导入 -->
+            <div class="danmaku-import" id="danmakuImport" style="display:none;position:absolute;bottom:130px;left:50%;transform:translateX(-50%);z-index:60;">
+                <div style="display:flex;gap:6px;padding:8px 10px;background:rgba(251,114,153,0.15);border:1px solid rgba(251,114,153,0.3);border-radius:8px;align-items:center;">
+                    <span style="font-size:12px;color:#fb7299;white-space:nowrap;">B站导入</span>
+                    <input type="text" id="bilibiliCid" placeholder="输入B站视频cid" style="width:120px;padding:4px 8px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:4px;color:#fff;font-size:12px;outline:none;">
+                    <button id="bilibiliImportBtn" style="padding:4px 10px;background:#fb7299;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;white-space:nowrap;">导入</button>
+                </div>
             </div>
 
             <!-- 快进/快退指示 -->
@@ -246,6 +294,11 @@ $siteName = getSetting('site_name', 'NAS影库');
                     </div>
 
                     <div class="controls-right">
+                        <!-- 弹幕 -->
+                        <button class="ctrl-btn" id="danmakuBtn" title="弹幕">
+                            <span id="danmakuLabel" style="font-size:12px;">弹幕</span>
+                        </button>
+
                         <!-- 倍速 -->
                         <div class="speed-control">
                             <button class="ctrl-btn" id="speedBtn" title="倍速">
@@ -375,6 +428,9 @@ $siteName = getSetting('site_name', 'NAS影库');
         fileId: <?= $fileId ?>,
         mediaId: <?= $file['media_item_id'] ?? 'null' ?>,
         mediaType: '<?= $file['media_type'] ?? 'movie' ?>',
+        tmdbId: <?= (int)($file['tmdb_id'] ?? 0) ?>,
+        seasonNum: <?= (int)($file['season_number'] ?? 1) ?>,
+        episodeNum: <?= (int)($file['episode_number'] ?? 0) ?>,
         nextFileId: <?= $nextFile ? $nextFile['id'] : 'null' ?>,
         prevFileId: <?= $prevFile ? $prevFile['id'] : 'null' ?>,
         skipSegments: <?= json_encode($skipSegments) ?>,
@@ -392,6 +448,19 @@ $siteName = getSetting('site_name', 'NAS影库');
     <script>
     (function() {
         const PD = window.__PLAYER_DATA__;
+        if (PD.tmdbId && PD.mediaType === 'tv' && PD.seasonNum > 0 && PD.episodeNum > 0) {
+            fetch('/api/media.php?action=show_season&id=<?= $file['media_item_id'] ?? 0 ?>&season=' + PD.seasonNum)
+                .then(r => r.json())
+                .then(d => {
+                    if (d && d.episodes) {
+                        const ep = d.episodes.find(e => e.episode_number == PD.episodeNum);
+                        if (ep && ep.name) {
+                            const el = document.getElementById('playerEpName');
+                            if (el) el.textContent = ep.name;
+                        }
+                    }
+                }).catch(() => {});
+        }
         if (!PD.userId || !PD.mediaId) return;
         const video = document.getElementById('videoPlayer');
         let hbTimer = null;

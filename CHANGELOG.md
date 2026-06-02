@@ -1,5 +1,67 @@
 # 更新日志
 
+## v3.2.0 (2026-06-02)
+
+### 新增
+- **网络设定** - 管理后台设置页新增外网访问开关，开启前弹出版权风险提示，需手动确认
+- **VIP管理页面** - 管理后台独立VIP管理标签页，按媒体库批量设为VIP/取消VIP，支持全选/反选
+- **图片代理缓存** - `/api/image.php` 代理TMDB图片并本地缓存7天，外网访问海报秒加载
+- **刮削元数据** - 影视详情页"更多"菜单新增刮削元数据按钮，搜索TMDB重新匹配完整元数据
+- **TMDB搜索链接** - 编辑元数据时TMDB ID旁增加搜索链接，点击跳转TMDB网站自行查找ID
+- **安装锁定** - 安装完成后自动生成 `install.lock`，再次访问 `/install.php` 跳转首页，删除lock文件或用 `?force=1` 可重装
+- **数据库迁移系统** - 新增 `update.php` 在线升级页和 `migrations/` 迁移脚本目录，覆盖文件后一键执行数据库变更
+- **弹幕系统** - 播放器内置Canvas弹幕引擎，支持滚动/顶部/底部三种模式，彩色选择，发送后实时显示；支持B站弹幕导入（输入cid一键拉取B站XML弹幕）
+- **自动播放** - 播放器页面加载自动静音播放，点击视频或提示按钮取消静音
+- **播放器剧集信息** - 播放器左上角显示剧名+第X季第Y集+集名（从TMDB获取）
+- **新标签页播放** - 所有播放入口改为新标签页打开，避免返回造成504/缓存问题
+
+### 改进
+- **登录鉴权** - 首页/详情页/播放器/历史/演员页全面要求登录，未登录自动跳转登录页并支持redirect回跳
+- **剧集标题优化** - 详情页每集卡片从TMDB拉取真实标题（如"第1集 · 试播集"），文件名改为灰色副标题
+- **特别篇/番外识别** - 扫描器识别"番外/SP/Specials/OVA/花絮"等文件夹映射为第0季；元数据树显示为"特别篇/番外"
+- **刷新元数据报错** - 失败时显示具体错误原因（如TMDB搜索无结果、API超时等），替代简单的"失败"提示
+- **移动端适配** - 768px以下自动切换汉堡菜单导航，海报网格缩小，筛选栏竖向排列
+- **登录页回跳** - 登录成功后自动跳回原始页面（支持 `?redirect=` 参数）
+- **首页加载优化** - 合并多库查询为单次 `homepage` API请求，精简返回字段，加载速度大幅提升；15秒超时fallback
+- **元数据管理默认收起** - 树形目录默认全部折叠，点击展开后才加载子节点，避免大面积DOM渲染卡顿
+- **未匹配视图增强** - 未匹配页面新增"无海报/元数据影视"分组，可一键刷新
+- **用户快速调权限** - 用户列表新增"权限"按钮，弹窗直选权限组保存即生效
+
+### 修复
+- **播放器JS解析错误** - 字幕下载代码缺闭合括号导致player.js整体无法执行，修复后所有按钮恢复正常
+- **老用户更新兼容** - `update.php` 和 `install.php` 兼容无 `install.lock` 的老安装（检测config.php自动补建lock文件）
+- **播放器HTML结构** - 修复player-topbar未闭合导致视频区嵌套布局崩塌
+
+### 文件变更
+- 新增 `api/image.php` - TMDB海报代理/缓存服务
+- 新增 `api/danmaku.php` - 弹幕CRUD + B站XML导入
+- 新增 `update.php` - 数据库在线迁移页面
+- 新增 `migrations/1_initial_settings.sql` - 首个迁移脚本
+- 新增 `migrations/2_danmaku.sql` - 弹幕表迁移
+- 更新 `admin/index.php` - 网络设定/VIP管理/系统更新入口/TMDB搜索链接
+- 更新 `assets/js/admin.js` - VIP批量进度条、远程访问风险弹窗、图片代理URL、用户快速调权限、元数据树默认收起
+- 更新 `assets/js/app.js` - 单独的homepage API、图片代理URL、移动端汉堡菜单、15秒超时、非JSON容错、异步渲染修复
+- 更新 `assets/js/player.js` - 弹幕引擎+轮询+B站导入、自动播放+静音提示、try-catch包裹
+- 更新 `assets/css/style.css` - 移动端汉堡菜单、遮罩层、响应式优化
+- 更新 `assets/css/player.css` - 播放器标题区、弹幕层/输入栏/导入栏样式
+- 更新 `includes/MediaScanner.php` - 番外/特别篇文件夹识别（返回season 0）、刷新元数据异常抛出
+- 更新 `includes/helpers.php` - `getPosterUrl()`/`getBackdropUrl()` 改为本地代理URL
+- 更新 `api/media.php` - 新增 `scrape_meta`/`media_tree_vip`/`batch_vip`/`homepage` API，优化查询性能
+- 更新 `api/scan.php` - `refresh_meta` 增加异常捕获返回错误详情
+- 更新 `show.php` - 剧集标题展示、刮削元数据、TMDB搜索链接、登录保护、播放新标签页
+- 更新 `index.php` - 登录保护、移动端汉堡菜单、图片代理URL
+- 更新 `player.php` - 登录保护、剧集信息显示、自动播放、弹幕UI、B站导入UI、播放新标签页
+- 更新 `login.php` - 登录后redirect回跳支持
+- 更新 `history.php`/`actor.php` - 登录保护、图片代理URL、播放新标签页
+- 更新 `user/index.php` - 图片代理URL、播放新标签页
+- 更新 `install.php` - 安装锁定机制、`install.lock` 自动生成、老用户兼容
+- 更新 `database.sql` - 新增 `remote_access_enabled`/`db_version` 配置项、弹幕表
+- 更新 `config.sample.php` - 版本号更新
+- 更新 `.gitignore` - 增加 `/install.lock`
+- 更新 `README.md` / `CHANGELOG.md` - 文档维护
+
+---
+
 ## v3.1.0 (2026-06-02)
 
 ### 新增

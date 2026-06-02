@@ -5,6 +5,10 @@ require_once __DIR__ . '/includes/Auth.php';
 require_once __DIR__ . '/includes/session.php';
 
 $user = auth()->getUser();
+if (!$user) {
+    header('Location: /login.php?redirect=' . urlencode($_SERVER['REQUEST_URI']));
+    exit;
+}
 $siteName = getSetting('site_name', 'NAS影库');
 
 $history = [];
@@ -104,9 +108,9 @@ if ($user) {
                             $pct = $h['duration'] > 0 ? min(100, round($h['position'] / $h['duration'] * 100)) : 0;
                             $positionStr = floor($h['position'] / 60) . '分';
                             $durationStr = floor($h['duration'] / 60) . '分';
-                            $posterUrl = $h['poster_path'] ? 'https://image.tmdb.org/t/p/w92' . $h['poster_path'] : '';
+                            $posterUrl = $h['poster_path'] ? '/api/image.php?size=w92&path=' . urlencode($h['poster_path']) : '';
                         ?>
-                            <a href="/player.php?file=<?= $h['file_id'] ?>" class="history-item">
+                            <a href="/player.php?file=<?= $h['file_id'] ?>" class="history-item" target="_blank">
                                 <div class="history-poster">
                                     <?php if ($posterUrl): ?>
                                         <img src="<?= $posterUrl ?>" alt="" loading="lazy">

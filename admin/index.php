@@ -52,6 +52,10 @@ $user = auth()->getUser();
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><path d="m10 8 6 4-6 4V8z"/></svg>
                     转码管理
                 </a>
+                <a href="#vip" class="nav-item" data-tab="vip">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                    VIP管理
+                </a>
                 <a href="#activity" class="nav-item" data-tab="activity">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                     活跃会话
@@ -70,6 +74,7 @@ $user = auth()->getUser();
                 </a>
             </nav>
             <div class="sidebar-footer">
+                <a href="/update.php">系统更新</a>
                 <a href="/index.php">返回首页</a>
                 <span><?= e($user['display_name'] ?? $user['username']) ?></span>
             </div>
@@ -185,6 +190,42 @@ $user = auth()->getUser();
                 </div>
             </section>
 
+            <!-- VIP管理 -->
+            <section class="admin-section" id="tab-vip">
+                <h2>VIP管理</h2>
+                <p class="section-desc">批量设置媒体资源的VIP权限，可按媒体库或权限组批量操作</p>
+                <div style="max-width:900px;">
+                    <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;align-items:flex-end;">
+                        <div class="form-group" style="flex:1;min-width:180px;">
+                            <label>选择媒体库</label>
+                            <select id="vipLibrarySelect" style="width:100%;padding:10px 14px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px;outline:none;">
+                                <option value="">-- 选择媒体库 --</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:1;min-width:180px;">
+                            <label>操作类型</label>
+                            <select id="vipActionSelect" style="width:100%;padding:10px 14px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px;outline:none;">
+                                <option value="set">设为VIP</option>
+                                <option value="unset">取消VIP</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary" id="vipApplyBtn">批量应用</button>
+                        <button class="btn btn-outline" id="vipLoadBtn">加载列表</button>
+                    </div>
+
+                    <div style="margin-bottom:12px;display:flex;gap:12px;align-items:center;">
+                        <label style="cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:6px;">
+                            <input type="checkbox" id="vipSelectAll"> 全选/取消全选
+                        </label>
+                        <span style="font-size:13px;color:var(--text-muted);" id="vipCount"></span>
+                    </div>
+
+                    <div id="vipMediaList" style="max-height:500px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
+                        <div style="color:var(--text-muted);padding:20px;text-align:center;font-size:13px;">请选择媒体库后点击"加载列表"</div>
+                    </div>
+                </div>
+            </section>
+
             <!-- 活跃会话 -->
             <section class="admin-section" id="tab-activity">
                 <div class="section-header">
@@ -226,6 +267,19 @@ $user = auth()->getUser();
             <section class="admin-section" id="tab-settings">
                 <h2>系统设置</h2>
                 <form id="settingsForm" class="settings-form">
+
+                    <h3 style="margin:0 0 20px;padding-bottom:8px;border-bottom:1px solid var(--border);">网络设定</h3>
+
+                    <div class="form-group">
+                        <label>允许外网访问</label>
+                        <select name="remote_access_enabled" id="settingRemoteAccess">
+                            <option value="0">关闭</option>
+                            <option value="1">开启</option>
+                        </select>
+                        <small style="color:#f59e0b;display:block;margin-top:6px;">开启前请确认：外网访问需具备相关资质，涉及影视版权问题请注意风险，自行承担相关法律责任</small>
+                    </div>
+
+                    <h3 style="margin:32px 0 20px;padding-top:20px;border-top:1px solid var(--border);">基本设置</h3>
                     <div class="form-group">
                         <label>站点名称</label>
                         <input type="text" name="site_name" id="settingSiteName">
@@ -477,7 +531,7 @@ $user = auth()->getUser();
                     <input type="text" id="editMetaGenres" placeholder="如: 剧情, 历史, 家庭">
                 </div>
                 <div class="form-group">
-                    <label>TMDB ID</label>
+                    <label>TMDB ID <a href="#" id="editMetaTmdbLink" target="_blank" style="color:#e50914;font-size:12px;margin-left:4px;">搜索 ↗</a></label>
                     <input type="number" id="editMetaTmdbId">
                 </div>
                 <div class="form-group">

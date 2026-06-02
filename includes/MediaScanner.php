@@ -165,10 +165,12 @@ class MediaScanner
 
     private function extractSeasonNumber(string $folderName): int
     {
-        if (preg_match('/season\s*(\d+)/i', $folderName, $m)) return (int) $m[1];
-        if (preg_match('/^s(\d+)/i', $folderName, $m)) return (int) $m[1];
-        if (preg_match('/第\s*(\d+)\s*季/', $folderName, $m)) return (int) $m[1];
-        if (preg_match('/^(\d+)$/', trim($folderName), $m)) return (int) $m[1];
+        $name = trim($folderName);
+        if (preg_match('/season\s*(\d+)/i', $name, $m)) return (int) $m[1];
+        if (preg_match('/^s(\d+)/i', $name, $m)) return (int) $m[1];
+        if (preg_match('/第\s*(\d+)\s*季/', $name, $m)) return (int) $m[1];
+        if (preg_match('/^(\d+)$/', $name, $m)) return (int) $m[1];
+        if (preg_match('/番外|SP|special|specials|ova|oad|extras?|bonus|幕后|花絮/i', $name)) return 0;
         return 1;
     }
 
@@ -487,22 +489,22 @@ class MediaScanner
     public function refreshMetadata(int $mediaId): bool
     {
         $media = $this->db->fetchOne('SELECT * FROM media_items WHERE id = ?', [$mediaId]);
-        if (!$media) return false;
+        if (!$media) throw new Exception('媒体不存在');
 
         $tmdbId = $media['tmdb_id'];
         if (!$tmdbId && !empty($media['title'])) {
             $results = $this->tmdb->searchMovie($media['title'], $media['year']);
-            if (empty($results)) return false;
+            if (empty($results)) throw new Exception('TMDB搜索无结果: ' . $media['title']);
             $tmdbId = $results[0]['id'];
         }
 
-        if (!$tmdbId) return false;
+        if (!$tmdbId) throw new Exception('无TMDB ID，无法刷新元数据');
 
         $details = $media['type'] === 'tv'
             ? $this->tmdb->getTvDetails($tmdbId)
             : $this->tmdb->getMovieDetails($tmdbId);
 
-        if (!$details) return false;
+        if (!$details) throw new Exception('TMDB获取详情失败 (ID: ' . $tmdbId . ')');
 
         $data = $this->tmdb->formatMovieData($details);
         $this->db->update('media_items', $data, 'id = ?', [$mediaId]);

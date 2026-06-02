@@ -1,4 +1,16 @@
 <?php
+$lockFile = __DIR__ . '/install.lock';
+$configFile = __DIR__ . '/config.php';
+if (file_exists($lockFile) && !isset($_GET['force'])) {
+    header('Location: /index.php');
+    exit;
+}
+if (!file_exists($lockFile) && file_exists($configFile) && !isset($_GET['force'])) {
+    @file_put_contents($lockFile, date('Y-m-d H:i:s') . ' - auto-repaired');
+    header('Location: /index.php');
+    exit;
+}
+
 $step = (int)($_GET['step'] ?? 1);
 $error = '';
 $success = '';
@@ -131,6 +143,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $step = 3;
                 $success = '安装完成！';
+
+                @file_put_contents($lockFile, date('Y-m-d H:i:s') . ' - installed');
             } catch (Exception $e) {
                 $error = '初始化失败: ' . $e->getMessage();
             }
@@ -297,20 +311,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <a href="/admin/index.php" class="btn btn-outline" style="text-decoration:none;">管理后台</a>
             </div>
             <div style="margin-top:24px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:16px;">
-                <p style="font-size:14px;color:#fbbf24;margin-bottom:12px;">安装完成，建议删除以下文件以确保安全：</p>
-                <ul style="font-size:13px;color:rgba(255,255,255,0.6);list-style:none;padding:0;">
-                    <li style="padding:4px 0;">install.php — 安装向导（必须删除）</li>
-                    <li style="padding:4px 0;">database.sql — 数据库结构文件（含完整表定义）</li>
-                    <li style="padding:4px 0;">config.sample.php — 配置模板</li>
-                    <li style="padding:4px 0;">SYNOLOGY.md — 群晖安装指南</li>
-                    <li style="padding:4px 0;">README.md — 说明文档</li>
-                    <li style="padding:4px 0;">CHANGELOG.md — 更新日志</li>
-                    <li style="padding:4px 0;">docker-compose.yml — Docker 配置</li>
-                    <li style="padding:4px 0;">Dockerfile — Docker 镜像文件</li>
-                    <li style="padding:4px 0;">nginx.conf — Nginx 配置示例</li>
-                    <li style="padding:4px 0;">docker/ — Docker 目录</li>
-                    <li style="padding:4px 0;">.gitignore / .htaccess</li>
-                </ul>
+                <p style="font-size:14px;color:var(--text-secondary);margin-bottom:8px;">安全提示</p>
+                <p style="font-size:13px;color:rgba(255,255,255,0.5);">安装向导已自动锁定。如需重新安装，请删除项目根目录下的 <code style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:3px;">install.lock</code> 文件后再次访问此页面，或在 URL 后添加 <code style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:3px;">?force=1</code></p>
             </div>
         <?php endif; ?>
     </div>

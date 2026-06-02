@@ -21,12 +21,21 @@
     const $ = (sel) => document.querySelector(sel);
     const $$ = (sel) => document.querySelectorAll(sel);
 
+    function posterUrl(path, size) {
+        if (!path) return '';
+        return '/api/image.php?size=' + (size || 'w500') + '&path=' + encodeURIComponent(path);
+    }
+
     async function api(url, options = {}) {
         const res = await fetch(url, {
-            headers: { 'Content-Type': 'application/json', ...options.headers },
+            headers: { ...options.headers },
             ...options,
         });
-        return res.json();
+        const text = await res.text();
+        try { return JSON.parse(text); } catch(e) {
+            console.error('API非JSON响应:', url, text.substring(0, 200));
+            return { error: '服务器响应异常', raw: text.substring(0, 100) };
+        }
     }
 
     async function loadMedia(reset = false) {
@@ -35,60 +44,85 @@
             state.items = [];
         }
 
-        const typeParam = (state.type === 'all' || state.type === 'favorites' || state.type === 'collections' || state.type === 'library') ? 'all' : state.type;
+        const isHomepage = (state.type === 'all' && state.libraryId === 0 && state.genre === '' && state.search === '' && state.cast === '');
 
-        const params = new URLSearchParams({
-            action: 'list',
-            page: state.page,
-            limit: state.limit,
-            type: typeParam,
-            genre: state.genre,
-            sort: state.sort,
-            search: state.search,
-        });
-        if (state.cast) params.append('cast', state.cast);
-        if (state.libraryId > 0) params.append('library_id', state.libraryId);
+        if (!isHomepage) {
+            const typeParam = (state.type === 'all' || state.type === 'favorites' || state.type === 'collections' || state.type === 'library') ? 'all' : state.type;
 
-        $('#loadingSpinner').style.display = 'flex';
-        $('#emptyState').style.display = 'none';
-        $('#loadMore').style.display = 'none';
+            const params = new URLSearchParams({
+                action: 'list',
+                page: state.page,
+                limit: state.limit,
+                type: typeParam,
+                genre: state.genre,
+                sort: state.sort,
+                search: state.search,
+            });
+            if (state.cast) params.append('cast', state.cast);
+            if (state.libraryId > 0) params.append('library_id', state.libraryId);
 
-        try {
-            const data = await api(`/api/media.php?${params}`);
+            $('#loadingSpinner').style.display = 'flex';
+            $('#emptyState').style.display = 'none';
+            $('#loadMore').style.display = 'none';
 
-            if (reset) {
-                state.items = data.items;
-            } else {
-                state.items = [...state.items, ...data.items];
+            try {
+                const data = await api(`/api/media.php?${params}`);
+
+                if (reset) {
+                    state.items = data.items;
+                } else {
+                    state.items = [...state.items, ...data.items];
+                }
+                state.total = data.total;
+                state.pages = data.pages;
+                state.page = data.page;
+
+                renderGrid();
+                $('#mediaCount').textContent = `${state.total} 部影片`;
+
+                if (state.page < state.pages) {
+                    $('#loadMore').style.display = 'block';
+                }
+            } catch (e) {
+                console.error('加载失败:', e);
+            } finally {
+                $('#loadingSpinner').style.display = 'none';
+                if (state.items.length === 0) {
+                    $('#emptyState').style.display = 'block';
+                }
             }
-            state.total = data.total;
-            state.pages = data.pages;
-            state.page = data.page;
+        } else {
+            $('#loadingSpinner').style.display = 'flex';
+            $('#emptyState').style.display = 'none';
+            $('#loadMore').style.display = 'none';
 
-            renderGrid();
-            $('#mediaCount').textContent = `${state.total} 部影片`;
+            const timeout = setTimeout(() => {
+                $('#loadingSpinner').style.display = 'none';
+                if (!$('#posterGrid').innerHTML.trim()) {
+                    $('#posterGrid').innerHTML = '<div class="empty-state"><h3>加载超时</h3><p>请检查网络连接后刷新页面</p></div>';
+                    $('#emptyState').style.display = 'block';
+                }
+            }, 15000);
 
-            if (state.page < state.pages) {
-                $('#loadMore').style.display = 'block';
-            }
-        } catch (e) {
-            console.error('加载失败:', e);
-        } finally {
-            $('#loadingSpinner').style.display = 'none';
-            if (state.items.length === 0) {
-                $('#emptyState').style.display = 'block';
+            try {
+                renderGrid();
+                await renderGridAsync();
+                $('#mediaCount').textContent = '0 部影片';
+            } catch (e) {
+                console.error('加载失败:', e);
+            } finally {
+                clearTimeout(timeout);
+                $('#loadingSpinner').style.display = 'none';
             }
         }
     }
 
     function renderGrid() {
-        const grid = $('#posterGrid');
-
         if (state.libraryId === 0 && state.type !== 'favorites' && state.type !== 'collections' && state.search === '') {
-            renderGroupedSections();
             return;
         }
 
+        const grid = $('#posterGrid');
         grid.innerHTML = '';
         grid.className = 'poster-grid';
         if (state.viewMode === 'list') grid.classList.add('list-view');
@@ -101,13 +135,28 @@
         lazyLoadImages();
     }
 
+    async function renderGridAsync() {
+        if (state.libraryId === 0 && state.type !== 'favorites' && state.type !== 'collections' && state.search === '') {
+            await renderGroupedSections();
+            return;
+        }
+        if (state.type === 'favorites') {
+            await loadFavorites();
+            return;
+        }
+        if (state.type === 'collections') {
+            await loadCollections();
+            return;
+        }
+    }
+
     function createPosterCard(item) {
         const card = document.createElement('div');
         card.className = `poster-card${state.viewMode === 'list' ? ' list-item' : ''}`;
         card.dataset.id = item.id;
 
-        const posterUrl = item.poster_path
-            ? `https://image.tmdb.org/t/p/w500${item.poster_path}`
+        const posterUrlPath = item.poster_path
+            ? posterUrl(item.poster_path, 'w500')
             : null;
 
         const rating = item.rating ? parseFloat(item.rating).toFixed(1) : '';
@@ -116,8 +165,8 @@
 
         if (state.viewMode === 'list') {
             card.innerHTML = `
-                ${posterUrl
-                    ? `<img class="poster-img" data-src="${posterUrl}" alt="${escHtml(item.title)}">`
+                ${posterUrlPath
+                    ? `<img class="poster-img" data-src="${posterUrlPath}" alt="${escHtml(item.title)}">`
                     : `<div class="no-poster"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><path d="m7 2v20l5-3 5 3V2"/></svg></div>`
                 }
                 <div class="poster-overlay">
@@ -131,8 +180,8 @@
             `;
         } else {
             card.innerHTML = `
-                ${posterUrl
-                    ? `<img class="poster-img" data-src="${posterUrl}" alt="${escHtml(item.title)}">`
+                ${posterUrlPath
+                    ? `<img class="poster-img" data-src="${posterUrlPath}" alt="${escHtml(item.title)}">`
                     : `<div class="no-poster"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><path d="m7 2v20l5-3 5 3V2"/></svg><span>${escHtml(item.title)}</span></div>`
                 }
                 ${year ? `<span class="poster-year-badge">${year}</span>` : ''}
@@ -159,34 +208,19 @@
         grid.innerHTML = '';
         grid.className = '';
 
-        let libs = state.libraries;
-        if (libs.length === 0) {
-            try {
-                libs = await api('/api/scan.php?action=list_libraries');
-                state.libraries = libs || [];
-            } catch (e) {
-                grid.innerHTML = '<div class="empty-state"><h3>暂无媒体库</h3><p>请在管理后台添加媒体库</p></div>';
+        try {
+            const libGroups = await api('/api/media.php?action=homepage');
+            $('#loadingSpinner').style.display = 'none';
+
+            if (!libGroups || libGroups.length === 0 || libGroups.error) {
+                grid.innerHTML = '<div class="empty-state"><h3>暂无媒体库</h3><p>请在管理后台添加媒体库并扫描</p></div>';
+                $('#emptyState').style.display = 'block';
                 return;
             }
-        }
 
-        if (!libs || libs.length === 0) {
-            grid.innerHTML = '<div class="empty-state"><h3>暂无媒体库</h3><p>请在管理后台添加媒体库</p></div>';
-            return;
-        }
-
-        let hasContent = false;
-        for (const lib of libs) {
-            try {
-                const params = new URLSearchParams({
-                    action: 'list',
-                    page: 1,
-                    limit: 12,
-                    library_id: lib.id,
-                    sort: 'added',
-                });
-                const data = await api(`/api/media.php?${params}`);
-                if (!data.items || data.items.length === 0) continue;
+            let hasContent = false;
+            for (const group of libGroups) {
+                if (!group.items || group.items.length === 0) continue;
                 hasContent = true;
 
                 const section = document.createElement('div');
@@ -194,26 +228,25 @@
 
                 const header = document.createElement('div');
                 header.className = 'lib-section-header';
-                header.innerHTML = `<h3 class="lib-section-title">${escHtml(lib.name)}</h3>`;
+                header.innerHTML = `<h3 class="lib-section-title">${escHtml(group.library_name)}</h3>`;
                 section.appendChild(header);
 
                 const row = document.createElement('div');
                 row.className = 'lib-section-row';
-                row.style.cssText = 'display:flex;gap:12px;overflow-x:auto;padding:0 24px 16px;scroll-snap-type:x mandatory;';
 
-                data.items.forEach(item => {
+                group.items.forEach(item => {
                     const card = document.createElement('div');
                     card.className = 'lib-section-card';
                     card.style.cssText = 'flex-shrink:0;width:150px;cursor:pointer;transition:transform 0.2s;scroll-snap-align:start;';
                     card.dataset.id = item.id;
 
-                    const posterUrl = item.poster_path
-                        ? `https://image.tmdb.org/t/p/w300${item.poster_path}`
+                    const posterUrl2 = item.poster_path
+                        ? posterUrl(item.poster_path, 'w300')
                         : '';
 
                     card.innerHTML = `
                         <div class="lib-card-poster" style="position:relative;width:100%;aspect-ratio:2/3;border-radius:8px;overflow:hidden;background:var(--bg-card);">
-                            ${posterUrl ? `<img src="${posterUrl}" alt="" style="width:100%;height:100%;object-fit:cover;" loading="lazy">` : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);">N/A</div>'}
+                            ${posterUrl2 ? `<img src="${posterUrl2}" alt="" style="width:100%;height:100%;object-fit:cover;" loading="lazy">` : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);">N/A</div>'}
                             <div class="poster-play" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:48px;height:48px;background:rgba(229,9,20,0.9);border-radius:50%;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity 0.3s;"><svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
                         </div>
                         <div style="font-size:13px;color:var(--text-primary);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(item.title)}</div>
@@ -239,13 +272,18 @@
 
                 section.appendChild(row);
                 grid.appendChild(section);
-            } catch (e) {
-                console.error(`加载媒体库 ${lib.name} 失败:`, e);
             }
-        }
 
-        if (!hasContent) {
-            grid.innerHTML = '<div class="empty-state" style="padding:60px;"><h3>所有媒体库暂无内容</h3><p>请先扫描媒体库以获取媒体信息</p></div>';
+            state.libraries = libGroups;
+
+            if (!hasContent) {
+                grid.innerHTML = '<div class="empty-state" style="padding:60px;"><h3>所有媒体库暂无内容</h3><p>请先扫描媒体库以获取媒体信息</p></div>';
+            }
+        } catch (e) {
+            console.error('加载首页数据失败:', e);
+            $('#loadingSpinner').style.display = 'none';
+            grid.innerHTML = '<div class="empty-state"><h3>暂无媒体库</h3><p>请在管理后台添加媒体库并扫描</p></div>';
+            $('#emptyState').style.display = 'block';
         }
     }
 
@@ -271,12 +309,12 @@
 
             const modal = $('#detailModal');
             const backdrop = data.backdrop_path
-                ? `https://image.tmdb.org/t/p/original${data.backdrop_path}`
+                ? posterUrl(data.backdrop_path, 'original')
                 : '';
 
             $('#detailBackdrop').style.backgroundImage = backdrop ? `url(${backdrop})` : 'none';
             $('#detailPoster').src = data.poster_path
-                ? `https://image.tmdb.org/t/p/w500${data.poster_path}`
+                ? posterUrl(data.poster_path, 'w500')
                 : '/assets/images/no-poster.svg';
             $('#detailTitle').textContent = data.title || data.original_title;
             $('#detailYear').textContent = data.year || '';
@@ -295,7 +333,7 @@
             if (data.files && data.files.length > 0) {
                 filesContainer.innerHTML = `<h4>文件列表 (${data.files.length})</h4>` +
                     data.files.map(f => `
-                        <div class="file-item" onclick="window.location.href='/player.php?file=${f.id}'">
+                        <div class="file-item" onclick="window.open('/player.php?file=${f.id}','_blank')">
                             <span class="file-name">${escHtml(f.file_name)}</span>
                             <span class="file-size">${formatBytes(f.file_size)}</span>
                         </div>
@@ -338,9 +376,9 @@
                 slide.className = `hero-slide${i === 0 ? ' active' : ''}`;
 
                 const backdropUrl = item.backdrop_path
-                    ? `https://image.tmdb.org/t/p/original${item.backdrop_path}`
+                    ? posterUrl(item.backdrop_path, 'original')
                     : item.poster_path
-                        ? `https://image.tmdb.org/t/p/original${item.poster_path}`
+                        ? posterUrl(item.poster_path, 'original')
                         : '';
 
                 const detailUrl = item.type === 'tv' ? `/show.php?id=${item.id}` : 'javascript:;';
@@ -379,7 +417,7 @@
 
             slider.querySelectorAll('.hero-play-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
-                    window.location.href = '/player.php?media=' + btn.dataset.mediaId;
+                    window.open('/player.php?media=' + btn.dataset.mediaId, '_blank');
                 });
             });
 
@@ -411,19 +449,19 @@
 
             items.forEach(item => {
                 const pct = item.duration > 0 ? Math.min(100, Math.round(item.position / item.duration * 100)) : 0;
-                const posterUrl = item.poster_path
-                    ? `https://image.tmdb.org/t/p/w300${item.poster_path}`
+                const continuePoster = item.poster_path
+                    ? posterUrl(item.poster_path, 'w300')
                     : '';
 
                 const card = document.createElement('div');
                 card.className = 'continue-card';
                 card.onclick = () => {
-                    window.location.href = `/player.php?file=${item.file_id}`;
+                    window.open(`/player.php?file=${item.file_id}`, '_blank');
                 };
 
                 card.innerHTML = `
                     <div class="continue-poster">
-                        ${posterUrl ? `<img src="${posterUrl}" alt="${escHtml(item.title)}" loading="lazy">` : '<div class="no-poster-sm"></div>'}
+                        ${continuePoster ? `<img src="${continuePoster}" alt="${escHtml(item.title)}" loading="lazy">` : '<div class="no-poster-sm"></div>'}
                         <div class="continue-progress-bar"><div class="continue-progress-fill" style="width:${pct}%"></div></div>
                     </div>
                     <div class="continue-title">${escHtml(item.title)}</div>
@@ -603,9 +641,35 @@
 
         on('#playBtn', 'click', () => {
             if (state.currentDetail?.files?.length > 0) {
-                window.location.href = `/player.php?file=${state.currentDetail.files[0].id}`;
+                window.open(`/player.php?file=${state.currentDetail.files[0].id}`, '_blank');
             }
         });
+
+        const hamburgerBtn = $('#hamburgerBtn');
+        const mobileOverlay = $('#mobileNavOverlay');
+        if (hamburgerBtn && mobileOverlay) {
+            hamburgerBtn.addEventListener('click', () => {
+                mobileOverlay.classList.toggle('show');
+            });
+            mobileOverlay.querySelectorAll('a').forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const section = link.dataset.section;
+                    const libId = parseInt(link.dataset.libId) || 0;
+                    $$('.nav-links a').forEach(l => l.classList.remove('active'));
+                    state.type = section;
+                    state.libraryId = libId;
+                    state.page = 1;
+                    state.items = [];
+                    mobileOverlay.querySelectorAll('a').forEach(a => a.classList.remove('active'));
+                    link.classList.add('active');
+                    mobileOverlay.classList.remove('show');
+                    if (section === 'favorites') loadFavorites();
+                    else if (section === 'collections') loadCollections();
+                    else loadMedia(true);
+                });
+            });
+        }
 
         on('#favBtn', 'click', async () => {
             if (!state.currentDetail) return;
@@ -630,8 +694,14 @@
         if (logoutBtn) {
             logoutBtn.addEventListener('click', async (e) => {
                 e.preventDefault();
-                await api('/api/auth.php?action=logout');
-                window.location.reload();
+                e.stopPropagation();
+                try {
+                    const res = await fetch('/api/auth.php?action=logout');
+                    await res.text();
+                } catch (err) {
+                    // logout failed, but still try to reload
+                }
+                window.location.href = '/login.php';
             });
         }
 
@@ -700,6 +770,7 @@
             state.total = items.length;
             state.pages = 1;
             renderGrid();
+            await renderGridAsync();
             $('#mediaCount').textContent = `${items.length} 部收藏`;
             $('#loadMore').style.display = 'none';
             if (items.length === 0) {
@@ -729,10 +800,10 @@
             }
 
             collections.forEach(col => {
-                const posterUrl = col.first_poster
-                    ? `https://image.tmdb.org/t/p/w300${col.first_poster}`
+                const collectionPoster = col.first_poster
+                    ? posterUrl(col.first_poster, 'w300')
                     : col.poster_path
-                        ? `https://image.tmdb.org/t/p/w300${col.poster_path}`
+                        ? posterUrl(col.poster_path, 'w300')
                         : '';
                 const card = document.createElement('div');
                 card.className = 'poster-card';
@@ -740,8 +811,8 @@
                 card.dataset.collection = 'true';
                 card.innerHTML = `
                     <div class="poster-wrapper">
-                        ${posterUrl
-                            ? `<img src="${posterUrl}" alt="${escHtml(col.name)}" loading="lazy">`
+                        ${collectionPoster
+                            ? `<img src="${collectionPoster}" alt="${escHtml(col.name)}" loading="lazy">`
                             : `<div class="no-poster"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg><span>${escHtml(col.name)}</span></div>`}
                         <div class="poster-badge">合集</div>
                     </div>
@@ -755,6 +826,7 @@
                     state.total = items.length;
                     state.pages = 1;
                     renderGrid();
+                    await renderGridAsync();
                     $('#mediaCount').textContent = `${col.name} · ${items.length} 部`;
                     $('#loadMore').style.display = 'none';
                 });

@@ -333,7 +333,26 @@ CREATE TABLE `notifications` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
--- 16. 密码重置令牌表
+-- 16. 弹幕表
+-- ============================================================
+DROP TABLE IF EXISTS `danmaku`;
+CREATE TABLE `danmaku` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `file_id` int(11) NOT NULL,
+    `user_id` int(11) NOT NULL,
+    `content` varchar(500) NOT NULL,
+    `time_pos` decimal(10,2) NOT NULL COMMENT '弹幕出现时间(秒)',
+    `color` varchar(7) DEFAULT '#ffffff',
+    `type` enum('scroll','top','bottom') DEFAULT 'scroll',
+    `font_size` tinyint(3) DEFAULT 18,
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_file_time` (`file_id`, `time_pos`),
+    KEY `idx_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- 17. 密码重置令牌表
 -- ============================================================
 DROP TABLE IF EXISTS `password_resets`;
 CREATE TABLE `password_resets` (
@@ -365,8 +384,10 @@ INSERT INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('poster_lang', 'zh-CN'),
 ('theme', 'dark'),
 ('allow_register', '1'),
+('remote_access_enabled', '0'),
 ('default_user_group', '1'),
 ('scan_interval', '3600'),
+('db_version', '2'),
 ('ffmpeg_path', 'ffmpeg'),
 ('ffprobe_path', 'ffprobe'),
 ('transcode_enabled', '0'),

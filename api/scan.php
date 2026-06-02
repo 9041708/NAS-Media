@@ -38,8 +38,12 @@ try {
             $mediaId = (int)($input['media_id'] ?? 0);
             if (!$mediaId) jsonResponse(['error' => '缺少media_id'], 400);
 
-            $success = scanner()->refreshMetadata($mediaId);
-            jsonResponse(['success' => $success]);
+            try {
+                $success = scanner()->refreshMetadata($mediaId);
+                jsonResponse(['success' => $success]);
+            } catch (Exception $e) {
+                jsonResponse(['success' => false, 'error' => $e->getMessage()], 500);
+            }
             break;
 
         case 'add_library':

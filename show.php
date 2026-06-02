@@ -4,6 +4,12 @@ require_once __DIR__ . '/includes/Database.php';
 require_once __DIR__ . '/includes/Auth.php';
 require_once __DIR__ . '/includes/session.php';
 
+$user = auth()->getUser();
+if (!$user) {
+    header('Location: /login.php?redirect=' . urlencode($_SERVER['REQUEST_URI']));
+    exit;
+}
+
 $id = (int)($_GET['id'] ?? 0);
 if (!$id) { header('Location: /index.php'); exit; }
 
@@ -25,7 +31,6 @@ if ($item['type'] === 'tv') {
     ksort($seasons);
 }
 
-$user = auth()->getUser();
 $siteName = getSetting('site_name', 'NAS影库');
 $isAdmin = $user && $user['role'] === 'admin';
 
@@ -188,7 +193,7 @@ $genres = !empty($item['genres']) ? array_map('trim', explode(',', $item['genres
 
     <div class="show-backdrop">
         <?php if ($item['backdrop_path']): ?>
-            <img src="https://image.tmdb.org/t/p/original<?= $item['backdrop_path'] ?>" alt="">
+            <img src="/api/image.php?size=original&path=<?= urlencode($item['backdrop_path']) ?>" alt="">
         <?php else: ?>
             <div class="bk-fb" style="background:linear-gradient(135deg,#0b0b1a,#13132b,#0d0d24);"></div>
         <?php endif; ?>
@@ -197,7 +202,7 @@ $genres = !empty($item['genres']) ? array_map('trim', explode(',', $item['genres
     <div class="show-header">
         <div class="show-poster">
             <?php if ($item['poster_path']): ?>
-                <img src="https://image.tmdb.org/t/p/w500<?= $item['poster_path'] ?>" alt="">
+                <img src="/api/image.php?size=w500&path=<?= urlencode($item['poster_path']) ?>" alt="">
             <?php else: ?>
                 <div style="width:100%;aspect-ratio:2/3;background:var(--bg-hover);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px;text-align:center;padding:12px;"><?= e($item['title']) ?></div>
             <?php endif; ?>
@@ -246,6 +251,7 @@ $genres = !empty($item['genres']) ? array_map('trim', explode(',', $item['genres
                         <?php if ($isAdmin): ?>
                             <button onclick="openEditMetaOnShow()">编辑元数据</button>
                             <button onclick="refreshMetadata()">刷新元数据</button>
+                            <button onclick="scrapeMetadata()">刮削元数据</button>
                             <button onclick="scanMediaFiles()">扫描媒体库文件</button>
                         <?php endif; ?>
                     </div>
@@ -258,8 +264,8 @@ $genres = !empty($item['genres']) ? array_map('trim', explode(',', $item['genres
     <?php if ($item['type'] === 'tv' && !empty($seasons)): ?>
     <div class="content-section">
         <div class="season-tabs" id="seasonTabs">
-            <?php foreach ($seasons as $s): ?>
-                <button class="season-tab <?= $s['season'] == (array_key_first($seasons)) ? 'active' : '' ?>" data-season="<?= $s['season'] ?>">第 <?= $s['season'] ?> 季</button>
+        <?php foreach ($seasons as $s): ?>
+            <button class="season-tab <?= $s['season'] == (array_key_first($seasons)) ? 'active' : '' ?>" data-season="<?= $s['season'] ?>"><?= $s['season'] == 0 ? '特别篇' : '第 ' . $s['season'] . ' 季' ?></button>
             <?php endforeach; ?>
         </div>
         <?php foreach ($seasons as $s): ?>
@@ -271,12 +277,13 @@ $genres = !empty($item['genres']) ? array_map('trim', explode(',', $item['genres
                     ?>
                         <div class="ep-card" onclick="playFile(<?= $ep['id'] ?>)">
                             <div class="ep-card-thumb">
-                                <?php if ($item['poster_path']): ?><img src="https://image.tmdb.org/t/p/w500<?= $item['poster_path'] ?>" loading="lazy"><?php endif; ?>
+                                <?php if ($item['poster_path']): ?><img src="/api/image.php?size=w500&path=<?= urlencode($item['poster_path']) ?>" loading="lazy"><?php endif; ?>
                                 <span class="ep-card-num">第 <?= $epNum ?> 集</span>
                                 <?php if ($dur): ?><span class="ep-card-dur"><?= $dur ?></span><?php endif; ?>
                             </div>
                             <div class="ep-card-info">
-                                <div class="ep-card-title"><?= e($ep['file_name']) ?></div>
+                                <div class="ep-card-title" id="epTitle_<?= $item['tmdb_id'] ?>_<?= $s['season'] ?>_<?= $epNum ?>">第 <?= $epNum ?> 集</div>
+                                <div class="ep-card-fn" style="font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?= e($ep['file_name']) ?></div>
                                 <div class="ep-card-over ep-over-<?= $item['tmdb_id'] ?>-<?= $s['season'] ?>-<?= $epNum ?>" id="epOver_<?= $item['tmdb_id'] ?>_<?= $s['season'] ?>_<?= $epNum ?>"></div>
                             </div>
                         </div>
@@ -291,7 +298,7 @@ $genres = !empty($item['genres']) ? array_map('trim', explode(',', $item['genres
             <?php foreach ($files as $ep): $dur = $ep['duration'] ? floor($ep['duration']/60).':'.str_pad($ep['duration']%60,2,'0',STR_PAD_LEFT) : ''; ?>
                 <div class="ep-card" onclick="playFile(<?= $ep['id'] ?>)">
                     <div class="ep-card-thumb">
-                        <?php if ($item['poster_path']): ?><img src="https://image.tmdb.org/t/p/w500<?= $item['poster_path'] ?>" loading="lazy"><?php endif; ?>
+                        <?php if ($item['poster_path']): ?><img src="/api/image.php?size=w500&path=<?= urlencode($item['poster_path']) ?>" loading="lazy"><?php endif; ?>
                         <?php if ($dur): ?><span class="ep-card-dur"><?= $dur ?></span><?php endif; ?>
                     </div>
                     <div class="ep-card-info"><div class="ep-card-title"><?= e($ep['file_name']) ?></div></div>
@@ -330,7 +337,7 @@ const MEDIA_ID = <?= $id ?>;
 const MEDIA_TYPE = '<?= $item['type'] ?>';
 const TMDB_ID = <?= (int)($item['tmdb_id'] ?? 0) ?>;
 
-function playFile(fid) { if(fid) window.location.href='/player.php?file='+fid; }
+function playFile(fid) { if(fid) window.open('/player.php?file='+fid, '_blank'); }
 
 async function toggleFavorite() {
     const r=await fetch('/api/media.php?action=toggle_favorite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({media_id:MEDIA_ID})});
@@ -375,8 +382,10 @@ async function openTrailer() {
         const d<?= $s['season'] ?>=await r<?= $s['season'] ?>.json();
         if(d<?= $s['season'] ?>&&d<?= $s['season'] ?>.episodes){
             d<?= $s['season'] ?>.episodes.forEach(ep=>{
-                const el=document.getElementById('epOver_<?= $item['tmdb_id'] ?>_<?= $s['season'] ?>_'+ep.episode_number);
-                if(el&&ep.overview)el.textContent=ep.overview;
+                const titleEl=document.getElementById('epTitle_<?= $item['tmdb_id'] ?>_<?= $s['season'] ?>_'+ep.episode_number);
+                if(titleEl&&ep.name)titleEl.textContent='第 '+ep.episode_number+' 集 · '+ep.name;
+                const overEl=document.getElementById('epOver_<?= $item['tmdb_id'] ?>_<?= $s['season'] ?>_'+ep.episode_number);
+                if(overEl&&ep.overview)overEl.textContent=ep.overview;
             });
         }
     }catch(e){}
@@ -393,7 +402,7 @@ async function openTrailer() {
         if(!cast||!cast.length){row.innerHTML='<div style="color:var(--text-muted);padding:8px;font-size:13px;">暂无双人数据</div>';return;}
         row.innerHTML=cast.map(c=>`
             <div class="cast-card" onclick="window.location.href='/actor.php?name='+encodeURIComponent(c.name)" style="cursor:pointer;" title="查看 ${esc(c.name)} 的作品">
-                ${c.profile_path ? '<img src="https://image.tmdb.org/t/p/w185'+c.profile_path+'" loading="lazy" onerror="this.style.display=\'none\'">' : '<div style="width:100%;aspect-ratio:2/3;background:var(--bg-hover);display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--text-muted);">👤</div>'}
+                ${c.profile_path ? '<img src="/api/image.php?size=w185&path='+encodeURIComponent(c.profile_path)+'" loading="lazy" onerror="this.style.display=\'none\'">' : '<div style="width:100%;aspect-ratio:2/3;background:var(--bg-hover);display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--text-muted);">👤</div>'}
                 <div class="cast-name">${esc(c.name)}</div>
                 <div class="cast-role">${esc(c.character||'')}</div>
             </div>
@@ -411,7 +420,7 @@ async function openTrailer() {
         row.innerHTML=sim.filter(s=>s.id>0||s.external).map(s=>{
             const href = s.id > 0 ? `/show.php?id=${s.id}` : '#';
             const target = s.id > 0 ? '' : ' target="_blank"';
-            return `<a href="${href}" class="sim-card"${target}><img src="https://image.tmdb.org/t/p/w342${s.poster_path||''}" onerror="this.style.display='none'" loading="lazy"><div class="sim-title">${esc(s.title)} ${s.year||''}</div></a>`;
+            return `<a href="${href}" class="sim-card"${target}><img src="/api/image.php?size=w342&path=${encodeURIComponent(s.poster_path||'')}" onerror="this.style.display='none'" loading="lazy"><div class="sim-title">${esc(s.title)} ${s.year||''}</div></a>`;
         }).join('');
     }catch(e){document.getElementById('similarRow').innerHTML='<div style="color:var(--text-muted);padding:8px;font-size:13px;">加载失败</div>';}
 })();
@@ -446,11 +455,13 @@ async function showAddToCollection() {
 }
 
 async function refreshMetadata(){
-    if(!confirm('确定刷新元数据？'))return;
-    const r=await fetch('/api/scan.php?action=refresh_meta',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({media_id:MEDIA_ID})});
-    const d=await r.json();
-    alert(d.success?'刷新成功，1秒后刷新页面':'失败:'+(d.error||''));
-    if(d.success)setTimeout(()=>location.reload(),1000);
+    if(!confirm('确定刷新元数据？将从 TMDB 重新获取此媒体的详细信息。'))return;
+    try {
+        const r=await fetch('/api/scan.php?action=refresh_meta',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({media_id:MEDIA_ID})});
+        const d=await r.json();
+        if(d.success){alert('刷新成功');setTimeout(()=>location.reload(),1000);}
+        else alert('刷新失败: ' + (d.error || '未知错误'));
+    } catch(e) { alert('刷新失败: 网络错误 - ' + e.message); }
 }
 
 async function scanMediaFiles(){
@@ -458,6 +469,16 @@ async function scanMediaFiles(){
     const r=await fetch('/api/media.php?action=scan_media',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({media_id:MEDIA_ID})});
     const d=await r.json();
     alert(d.success?'扫描完成':'失败:'+(d.error||''));
+}
+
+async function scrapeMetadata(){
+    if(!confirm('确定刮削元数据？将从 TMDB 搜索匹配并重新获取完整元数据。'))return;
+    try {
+        const r=await fetch('/api/media.php?action=scrape_meta',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({media_id:MEDIA_ID})});
+        const d=await r.json();
+        if(d.success){alert('刮削成功，页面即将刷新');setTimeout(()=>location.reload(),1000);}
+        else alert('刮削失败: ' + (d.error || '未知错误'));
+    } catch(e) { alert('刮削失败: 网络错误 - ' + e.message); }
 }
 
 document.getElementById('logoutBtn')?.addEventListener('click',async e=>{e.preventDefault();await fetch('/api/auth.php?action=logout');location.href='/index.php';});
@@ -503,7 +524,7 @@ function openEditMetaOnShow() {
             </div>
             <div style="display:flex;gap:12px;margin-bottom:16px;">
                 <div class="form-group" style="flex:1;">
-                    <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">TMDB ID</label>
+                    <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">TMDB ID <a href="https://www.themoviedb.org/search?query=<?= urlencode($item['title'] ?? '') ?>" target="_blank" style="color:#e50914;font-size:11px;margin-left:4px;">搜索 ↗</a></label>
                     <input type="number" name="tmdb_id" value="<?= $item['tmdb_id'] ?? '' ?>" style="width:100%;padding:8px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:13px;outline:none;">
                 </div>
                 <div class="form-group" style="display:flex;align-items:flex-end;gap:6px;">

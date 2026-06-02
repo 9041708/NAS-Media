@@ -1,3 +1,4 @@
 /config.php
 /cache/*
+/install.lock
 /docker-compose.override.yml

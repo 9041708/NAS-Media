@@ -8,6 +8,7 @@ if (auth()->isLoggedIn()) { header('Location: /index.php'); exit; }
 
 $siteName = getSetting('site_name', 'NAS影库');
 $allowRegister = getSetting('allow_register', '1');
+$redirect = $_GET['redirect'] ?? '';
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -126,7 +127,8 @@ $allowRegister = getSetting('allow_register', '1');
             });
             const data = await res.json();
             if (data.success) {
-                window.location.href = '/';
+                const redirect = new URLSearchParams(window.location.search).get('redirect');
+                window.location.href = redirect || '/';
             } else {
                 showError(data.error || '登录失败');
             }

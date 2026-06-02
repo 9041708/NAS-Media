@@ -7,8 +7,13 @@ require_once __DIR__ . '/includes/session.php';
 $name = trim($_GET['name'] ?? '');
 if (!$name) { header('Location: /index.php'); exit; }
 
-$siteName = getSetting('site_name', 'NAS影库');
 $user = auth()->getUser();
+if (!$user) {
+    header('Location: /login.php?redirect=' . urlencode($_SERVER['REQUEST_URI']));
+    exit;
+}
+
+$siteName = getSetting('site_name', 'NAS影库');
 
 $person = tmdb()->searchPerson($name);
 $personDetails = null;
@@ -83,7 +88,7 @@ $tvShows = array_filter($localMedia, fn($m) => $m['type'] === 'tv');
     <div class="actor-header">
         <div class="actor-photo">
             <?php if ($photo): ?>
-                <img src="https://image.tmdb.org/t/p/w300<?= $photo ?>" alt="<?= e($name) ?>">
+                <img src="/api/image.php?size=w300&path=<?= urlencode($photo) ?>" alt="<?= e($name) ?>">
             <?php else: ?>
                 <div style="width:100%;aspect-ratio:2/3;background:var(--bg-hover);display:flex;align-items:center;justify-content:center;font-size:48px;color:var(--text-muted);">👤</div>
             <?php endif; ?>
@@ -105,7 +110,7 @@ $tvShows = array_filter($localMedia, fn($m) => $m['type'] === 'tv');
             <?php foreach ($movies as $m): ?>
                 <a href="/show.php?id=<?= $m['id'] ?>" class="actor-card">
                     <?php if ($m['poster_path']): ?>
-                        <img src="https://image.tmdb.org/t/p/w342<?= $m['poster_path'] ?>" loading="lazy">
+                        <img src="/api/image.php?size=w342&path=<?= urlencode($m['poster_path']) ?>" loading="lazy">
                     <?php endif; ?>
                     <div class="ac-title"><?= e($m['title']) ?></div>
                     <?php if ($m['year']): ?><div class="ac-year"><?= $m['year'] ?></div><?php endif; ?>
@@ -122,7 +127,7 @@ $tvShows = array_filter($localMedia, fn($m) => $m['type'] === 'tv');
             <?php foreach ($tvShows as $m): ?>
                 <a href="/show.php?id=<?= $m['id'] ?>" class="actor-card">
                     <?php if ($m['poster_path']): ?>
-                        <img src="https://image.tmdb.org/t/p/w342<?= $m['poster_path'] ?>" loading="lazy">
+                        <img src="/api/image.php?size=w342&path=<?= urlencode($m['poster_path']) ?>" loading="lazy">
                     <?php endif; ?>
                     <div class="ac-title"><?= e($m['title']) ?></div>
                     <?php if ($m['year']): ?><div class="ac-year"><?= $m['year'] ?></div><?php endif; ?>

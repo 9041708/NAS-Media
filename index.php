@@ -5,8 +5,13 @@ require_once __DIR__ . '/includes/TmdbApi.php';
 require_once __DIR__ . '/includes/Auth.php';
 require_once __DIR__ . '/includes/session.php';
 
-$siteName = getSetting('site_name', 'NAS影库');
 $user = auth()->getUser();
+if (!$user) {
+    header('Location: /login.php');
+    exit;
+}
+
+$siteName = getSetting('site_name', 'NAS影库');
 
 $libraries = db()->fetchAll('SELECT * FROM libraries ORDER BY COALESCE(sort_order, 0) ASC, name ASC');
 
@@ -49,6 +54,9 @@ if ($user) {
             </div>
         </div>
         <div class="nav-right">
+            <button class="btn-icon hamburger-btn" id="hamburgerBtn" title="菜单">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+            </button>
             <div class="search-box">
                 <input type="text" id="searchInput" placeholder="搜索影片...">
                 <button id="searchBtn" class="btn-icon">
@@ -72,9 +80,9 @@ if ($user) {
                             <?php if (!empty($recentHistory)): ?>
                                 <?php foreach ($recentHistory as $h): 
                                     $pct = $h['duration'] > 0 ? min(100, round($h['position'] / $h['duration'] * 100)) : 0;
-                                    $posterUrl = $h['poster_path'] ? 'https://image.tmdb.org/t/p/w92' . $h['poster_path'] : '';
+                                    $posterUrl = $h['poster_path'] ? '/api/image.php?size=w92&path=' . urlencode($h['poster_path']) : '';
                                 ?>
-                                    <a href="/player.php?file=<?= $h['file_id'] ?>" class="hd-item">
+                                    <a href="/player.php?file=<?= $h['file_id'] ?>" class="hd-item" target="_blank">
                                         <div class="hd-poster">
                                             <?php if ($posterUrl): ?><img src="<?= $posterUrl ?>" alt="" loading="lazy"><?php endif; ?>
                                         </div>
@@ -108,6 +116,15 @@ if ($user) {
             </div>
         </div>
     </nav>
+
+    <div class="mobile-nav-overlay" id="mobileNavOverlay">
+        <a href="#" class="active" data-section="all" data-lib-id="0">全部</a>
+        <?php foreach ($libraries as $lib): ?>
+            <a href="#" data-section="library" data-lib-id="<?= $lib['id'] ?>"><?= e($lib['name']) ?></a>
+        <?php endforeach; ?>
+        <a href="#" data-section="favorites">收藏</a>
+        <a href="#" data-section="collections">合集</a>
+    </div>
 
     <main class="main-content">
         <div id="activeFilter" style="display:none;max-width:1400px;margin:0 auto;padding:6px 24px;">

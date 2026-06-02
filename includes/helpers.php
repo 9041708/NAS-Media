@@ -119,7 +119,7 @@ function getPosterUrl(?string $path, string $size = 'w500'): string
     if (empty($path)) {
         return '/assets/images/no-poster.svg';
     }
-    return tmdb()->getPosterUrl($path, $size) ?: '/assets/images/no-poster.svg';
+    return '/api/image.php?size=' . $size . '&path=' . urlencode($path);
 }
 
 function getBackdropUrl(?string $path): string
@@ -127,7 +127,7 @@ function getBackdropUrl(?string $path): string
     if (empty($path)) {
         return '/assets/images/no-backdrop.svg';
     }
-    return tmdb()->getBackdropUrl($path) ?: '/assets/images/no-backdrop.svg';
+    return '/api/image.php?size=original&path=' . urlencode($path);
 }
 
 function getVideoMimeType(string $ext): string

@@ -91,10 +91,10 @@ $favorites = db()->fetchAll(
             <?php else: ?>
                 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:16px;">
                     <?php foreach ($favorites as $fav): ?>
-                        <a href="/player.php?media=<?= $fav['id'] ?>" style="text-decoration:none;">
+                        <a href="/player.php?media=<?= $fav['id'] ?>" target="_blank" style="text-decoration:none;">
                             <div style="border-radius:8px;overflow:hidden;background:var(--bg-card);transition:transform 0.2s;" onmouseover="this.style.transform='translateY(-4px)'" onmouseout="this.style.transform=''">
                                 <?php if ($fav['poster_path']): ?>
-                                    <img src="https://image.tmdb.org/t/p/w300<?= $fav['poster_path'] ?>" style="width:100%;aspect-ratio:2/3;object-fit:cover;display:block;">
+                                    <img src="/api/image.php?size=w300&path=<?= urlencode($fav['poster_path']) ?>" style="width:100%;aspect-ratio:2/3;object-fit:cover;display:block;">
                                 <?php else: ?>
                                     <div style="width:100%;aspect-ratio:2/3;background:var(--bg-hover);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:13px;"><?= e($fav['title']) ?></div>
                                 <?php endif; ?>
@@ -118,10 +118,10 @@ $favorites = db()->fetchAll(
             <?php else: ?>
                 <div style="display:flex;flex-direction:column;gap:8px;">
                     <?php foreach ($history as $h): ?>
-                        <a href="/player.php?file=<?= $h['file_id'] ?>" style="text-decoration:none;color:inherit;">
+                        <a href="/player.php?file=<?= $h['file_id'] ?>" target="_blank" style="text-decoration:none;color:inherit;">
                             <div style="display:flex;align-items:center;gap:16px;padding:12px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;transition:background 0.2s;" onmouseover="this.style.background='var(--bg-hover)'" onmouseout="this.style.background='var(--bg-card)'">
                                 <?php if ($h['poster_path']): ?>
-                                    <img src="https://image.tmdb.org/t/p/w92<?= $h['poster_path'] ?>" style="width:48px;border-radius:4px;flex-shrink:0;">
+                                    <img src="/api/image.php?size=w92&path=<?= urlencode($h['poster_path']) ?>" style="width:48px;border-radius:4px;flex-shrink:0;">
                                 <?php endif; ?>
                                 <div style="flex:1;min-width:0;">
                                     <div style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?= e($h['title']) ?></div>
