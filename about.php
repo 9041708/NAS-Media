@@ -5,7 +5,7 @@ require_once __DIR__ . '/includes/Auth.php';
 require_once __DIR__ . '/includes/session.php';
 
 $siteName = getSetting('site_name', 'NAS影库');
-$version = getSetting('app_version', '3.1.0');
+$version = getSetting('app_version', '3.3.0');
 $user = auth()->getUser();
 
 $changelog = file_get_contents(__DIR__ . '/CHANGELOG.md');

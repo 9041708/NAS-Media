@@ -385,8 +385,8 @@ CREATE TABLE `password_resets` (
 
 -- 默认权限组
 INSERT INTO `user_groups` (`id`, `name`, `permissions`, `is_default`) VALUES
-(1, '普通用户', '{"can_see_all":1,"episode_limit":0,"movie_minutes_limit":0}', 1),
-(2, 'VIP用户', '{"can_see_all":1,"episode_limit":0,"movie_minutes_limit":0}', 0);
+(1, '普通用户', '{"can_see_all":1,"episode_limit":0,"movie_minutes_limit":0,"watch_can_host":false,"watch_can_join":true,"watch_max_guests":0}', 1),
+(2, 'VIP用户', '{"can_see_all":1,"episode_limit":0,"movie_minutes_limit":0,"watch_can_host":true,"watch_can_join":true,"watch_max_guests":10}', 0);
 
 -- 默认系统设置
 INSERT INTO `settings` (`setting_key`, `setting_value`) VALUES

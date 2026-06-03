@@ -21,6 +21,27 @@ $files = db()->fetchAll(
     [$id]
 );
 
+// Query audio/subtitle tracks for all files
+$fileTracks = [];
+if (!empty($files)) {
+    $fileIds = array_column($files, 'id');
+    $placeholders = implode(',', array_fill(0, count($fileIds), '?'));
+    $audioTracks = db()->fetchAll(
+        "SELECT * FROM audio_tracks WHERE file_id IN ($placeholders) ORDER BY file_id, stream_index",
+        $fileIds
+    );
+    $subTracks = db()->fetchAll(
+        "SELECT * FROM subtitle_tracks WHERE file_id IN ($placeholders) ORDER BY file_id, stream_index",
+        $fileIds
+    );
+    foreach ($audioTracks as $at) {
+        $fileTracks[$at['file_id']]['audio'][] = $at;
+    }
+    foreach ($subTracks as $st) {
+        $fileTracks[$st['file_id']]['subtitles'][] = $st;
+    }
+}
+
 $seasons = [];
 if ($item['type'] === 'tv') {
     foreach ($files as $f) {
@@ -317,6 +338,15 @@ $genres = !empty($item['genres']) ? array_map('trim', explode(',', $item['genres
                                 <div class="ep-card-title" id="epTitle_<?= $item['tmdb_id'] ?>_<?= $s['season'] ?>_<?= $epNum ?>">第 <?= $epNum ?> 集</div>
                                 <div class="ep-card-fn" style="font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?= e($ep['file_name']) ?></div>
                                 <div class="ep-card-over ep-over-<?= $item['tmdb_id'] ?>-<?= $s['season'] ?>-<?= $epNum ?>" id="epOver_<?= $item['tmdb_id'] ?>_<?= $s['season'] ?>_<?= $epNum ?>"></div>
+                                <?php $ft = $fileTracks[$ep['id']] ?? []; ?>
+                                <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">
+                                    <?php if (!empty($ft['audio'])): ?>
+                                        <span>🎵 <?= count($ft['audio']) ?>音轨(<?= e(implode('/', array_map(fn($a) => $a['language'] ?: $a['codec'], array_slice($ft['audio'], 0, 3)))) ?><?= count($ft['audio']) > 3 ? '...' : '' ?>)</span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($ft['subtitles'])): ?>
+                                        <span> <?= e(implode('/', array_unique(array_map(fn($s) => $s['language'] ?: '?', array_slice($ft['subtitles'], 0, 3))))) ?><?= count($ft['subtitles']) > 3 ? '...' : '' ?>字幕</span>
+                                    <?php endif; ?>
+                                </div>
                             </div>
                         </div>
                     <?php endforeach; ?>
@@ -333,8 +363,66 @@ $genres = !empty($item['genres']) ? array_map('trim', explode(',', $item['genres
                         <?php if ($item['poster_path']): ?><img src="/api/image.php?size=w500&path=<?= urlencode($item['poster_path']) ?>" loading="lazy"><?php endif; ?>
                         <?php if ($dur): ?><span class="ep-card-dur"><?= $dur ?></span><?php endif; ?>
                     </div>
-                    <div class="ep-card-info"><div class="ep-card-title"><?= e($ep['file_name']) ?></div></div>
+                    <div class="ep-card-info">
+                        <div class="ep-card-title"><?= e($ep['file_name']) ?></div>
+                        <?php $ft = $fileTracks[$ep['id']] ?? []; ?>
+                        <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">
+                            <?php if (!empty($ft['audio'])): ?>
+                                <span>🎵 <?= count($ft['audio']) ?>音轨(<?= e(implode('/', array_map(fn($a) => $a['language'] ?: $a['codec'], array_slice($ft['audio'], 0, 3)))) ?><?= count($ft['audio']) > 3 ? '...' : '' ?>)</span>
+                            <?php endif; ?>
+                            <?php if (!empty($ft['subtitles'])): ?>
+                                <span> <?= e(implode('/', array_unique(array_map(fn($s) => $s['language'] ?: '?', array_slice($ft['subtitles'], 0, 3))))) ?><?= count($ft['subtitles']) > 3 ? '...' : '' ?>字幕</span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
                 </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <?php if (!empty($files) && !empty($fileTracks)): ?>
+    <div class="content-section">
+        <div class="section-title-row"><h2>媒体信息</h2></div>
+        <div class="file-info-list" style="display:flex;flex-direction:column;gap:10px;">
+            <?php foreach ($files as $fi):
+                $ft = $fileTracks[$fi['id']] ?? [];
+                if (empty($ft['audio']) && empty($ft['subtitles'])) continue;
+            ?>
+            <div class="file-info-item" style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:12px 16px;">
+                <div style="font-size:13px;font-weight:500;margin-bottom:6px;">📄 <?= e($fi['file_name']) ?></div>
+                <div style="display:flex;gap:20px;flex-wrap:wrap;">
+                    <?php if (!empty($ft['audio'])): ?>
+                    <div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">🎵 音轨 (<?= count($ft['audio']) ?>)</div>
+                        <?php foreach ($ft['audio'] as $at): ?>
+                        <div style="font-size:11px;color:var(--text-secondary);margin:2px 0;">
+                            <?= e($at['title'] ?: ($at['language'] ?: '音轨 ' . ($at['stream_index'] + 1))) ?>
+                            <span style="color:var(--text-muted);font-size:10px;">
+                                <?= e($at['codec'] ?: '') ?>
+                                <?php if ($at['channels']): ?><?= $at['channels'] ?>ch<?php endif; ?>
+                                <?php if ($at['language']): ?>(<?= e($at['language']) ?>)<?php endif; ?>
+                            </span>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <?php endif; ?>
+                    <?php if (!empty($ft['subtitles'])): ?>
+                    <div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">字幕 (<?= count($ft['subtitles']) ?>)</div>
+                        <?php foreach ($ft['subtitles'] as $st): ?>
+                        <div style="font-size:11px;color:var(--text-secondary);margin:2px 0;">
+                            <?= e($st['title'] ?: ($st['language'] ?: '字幕 ' . ($st['stream_index'] + 1))) ?>
+                            <span style="color:var(--text-muted);font-size:10px;">
+                                <?= $st['source'] === 'external' ? '外挂' : '内封' ?>
+                                <?php if ($st['language']): ?>(<?= e($st['language']) ?>)<?php endif; ?>
+                            </span>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <?php endif; ?>
+                </div>
+            </div>
             <?php endforeach; ?>
         </div>
     </div>

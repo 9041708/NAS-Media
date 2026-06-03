@@ -963,6 +963,101 @@ try {
             jsonResponse(['success' => true, 'updated' => $updated->rowCount()]);
             break;
 
+        case 'admin_list_collections':
+            auth()->requireAdmin();
+            $search = $_GET['search'] ?? '';
+            $ownerId = (int)($_GET['user_id'] ?? 0);
+
+            $where = [];
+            $params = [];
+
+            if ($ownerId) {
+                $where[] = 'c.user_id = ?';
+                $params[] = $ownerId;
+            }
+            if ($search) {
+                $where[] = 'c.name LIKE ?';
+                $params[] = "%$search%";
+            }
+
+            $sql = 'SELECT c.*, u.username, u.display_name,
+                    (SELECT COUNT(*) FROM collection_items ci WHERE ci.collection_id = c.id) as item_count
+                FROM collections c
+                JOIN users u ON c.user_id = u.id';
+            if ($where) {
+                $sql .= ' WHERE ' . implode(' AND ', $where);
+            }
+            $sql .= ' ORDER BY c.user_id, c.name';
+
+            $items = db()->fetchAll($sql, $params);
+            jsonResponse($items);
+            break;
+
+        case 'admin_collection_items':
+            auth()->requireAdmin();
+            $cid = (int)($_GET['id'] ?? 0);
+            if (!$cid) jsonResponse(['error' => '缺少id'], 400);
+            $items = db()->fetchAll(
+                'SELECT ci.*, mi.title, mi.type, mi.year, mi.poster_path
+                FROM collection_items ci
+                JOIN media_items mi ON ci.media_id = mi.id
+                WHERE ci.collection_id = ?
+                ORDER BY ci.sort_order',
+                [$cid]
+            );
+            jsonResponse($items);
+            break;
+
+        case 'update_collection':
+            if ($method !== 'POST') jsonResponse(['error' => '方法不允许'], 405);
+            auth()->requireAdmin();
+            $input = json_decode(file_get_contents('php://input'), true);
+            $cid = (int)($input['id'] ?? 0);
+            if (!$cid) jsonResponse(['error' => '缺少id'], 400);
+            $data = [];
+            if (isset($input['name'])) $data['name'] = trim($input['name']);
+            if (isset($input['overview'])) $data['overview'] = trim($input['overview']);
+            if (empty($data)) jsonResponse(['error' => '没有要更新的字段'], 400);
+            if (isset($data['name']) && $data['name'] === '') jsonResponse(['error' => '名称不能为空'], 400);
+            db()->update('collections', $data, 'id = ?', [$cid]);
+            jsonResponse(['success' => true]);
+            break;
+
+        case 'delete_collection':
+            if ($method !== 'POST') jsonResponse(['error' => '方法不允许'], 405);
+            auth()->requireAdmin();
+            $input = json_decode(file_get_contents('php://input'), true);
+            $cid = (int)($input['id'] ?? 0);
+            if (!$cid) jsonResponse(['error' => '缺少id'], 400);
+            db()->query('DELETE FROM collection_items WHERE collection_id = ?', [$cid]);
+            db()->query('DELETE FROM collections WHERE id = ?', [$cid]);
+            jsonResponse(['success' => true]);
+            break;
+
+        case 'remove_from_collection':
+            if ($method !== 'POST') jsonResponse(['error' => '方法不允许'], 405);
+            auth()->requireAdmin();
+            $input = json_decode(file_get_contents('php://input'), true);
+            $cid = (int)($input['collection_id'] ?? 0);
+            $mid = (int)($input['media_id'] ?? 0);
+            if (!$cid || !$mid) jsonResponse(['error' => '缺少参数'], 400);
+            db()->query('DELETE FROM collection_items WHERE collection_id = ? AND media_id = ?', [$cid, $mid]);
+            jsonResponse(['success' => true]);
+            break;
+
+        case 'add_media_to_collection':
+            if ($method !== 'POST') jsonResponse(['error' => '方法不允许'], 405);
+            auth()->requireAdmin();
+            $input = json_decode(file_get_contents('php://input'), true);
+            $cid = (int)($input['collection_id'] ?? 0);
+            $mid = (int)($input['media_id'] ?? 0);
+            if (!$cid || !$mid) jsonResponse(['error' => '缺少参数'], 400);
+            $ex = db()->fetchOne('SELECT id FROM collection_items WHERE collection_id=? AND media_id=?', [$cid, $mid]);
+            if ($ex) jsonResponse(['error' => '已在合集中'], 400);
+            db()->insert('collection_items', ['collection_id' => $cid, 'media_id' => $mid]);
+            jsonResponse(['success' => true]);
+            break;
+
         default:
             jsonResponse(['error' => '未知操作'], 400);
     }

@@ -221,6 +221,15 @@ $siteName = getSetting('site_name', 'NAS影库');
                 </div>
             </div>
 
+            <!-- B站弹幕导入 -->
+            <div class="danmaku-import" id="danmakuImport" style="display:none;position:absolute;bottom:130px;left:50%;transform:translateX(-50%);z-index:60;">
+                <div style="display:flex;gap:6px;padding:8px 10px;background:rgba(251,114,153,0.15);border:1px solid rgba(251,114,153,0.3);border-radius:8px;align-items:center;">
+                    <span style="font-size:12px;color:#fb7299;white-space:nowrap;">B站导入</span>
+                    <input type="text" id="bilibiliCid" placeholder="输入B站视频cid" style="width:120px;padding:4px 8px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:4px;color:#fff;font-size:12px;outline:none;">
+                    <button id="bilibiliImportBtn" style="padding:4px 10px;background:#fb7299;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;white-space:nowrap;">导入</button>
+                </div>
+            </div>
+
             <!-- 快进/快退指示 -->
             <div class="seek-indicator" id="seekIndicator" style="display:none;">
                 <div class="seek-icon" id="seekIcon"></div>
@@ -245,6 +254,33 @@ $siteName = getSetting('site_name', 'NAS影库');
                              data-type="<?= $seg['type'] ?>">
                         </div>
                     <?php endforeach; ?>
+                </div>
+
+                <!-- 弹幕发送栏 -->
+                <div class="danmaku-bar" id="danmakuBar" style="display:none;">
+                    <div class="danmaku-bar-row">
+                        <span class="danmaku-bar-label">弹幕</span>
+                        <input type="text" id="danmakuText" placeholder="发个弹幕吧~" maxlength="100" autocomplete="off">
+                        <select id="danmakuColor" title="颜色" class="danmaku-bar-sel">
+                            <option value="#ffffff">⚪</option>
+                            <option value="#ff4444" style="color:#ff4444">🔴</option>
+                            <option value="#44ff44" style="color:#44ff44">🟢</option>
+                            <option value="#4444ff" style="color:#4444ff">🔵</option>
+                            <option value="#ffff44" style="color:#ffff44">🟡</option>
+                            <option value="#ff44ff" style="color:#ff44ff">🟣</option>
+                        </select>
+                        <select id="danmakuType" title="类型" class="danmaku-bar-sel">
+                            <option value="scroll">滚动</option>
+                            <option value="top">顶部</option>
+                            <option value="bottom">底部</option>
+                        </select>
+                        <button id="danmakuSend" class="danmaku-bar-send">发送</button>
+                    </div>
+                    <div class="danmaku-bar-import" id="danmakuBarImport">
+                        <span style="font-size:11px;color:#fb7299;white-space:nowrap;">B站导入</span>
+                        <input type="text" id="bilibiliUrl" placeholder="输入B站视频链接自动解析..." autocomplete="off">
+                        <button id="bilibiliImportBtn">导入弹幕</button>
+                    </div>
                 </div>
 
                 <!-- 控制按钮 -->
@@ -294,6 +330,11 @@ $siteName = getSetting('site_name', 'NAS影库');
                     </div>
 
                     <div class="controls-right">
+                        <!-- 一起看 -->
+                        <button class="ctrl-btn" id="watchTogetherBtn" title="一起看">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                        </button>
+
                         <!-- 弹幕 -->
                         <button class="ctrl-btn" id="danmakuBtn" title="弹幕">
                             <span id="danmakuLabel" style="font-size:12px;">弹幕</span>
@@ -316,23 +357,26 @@ $siteName = getSetting('site_name', 'NAS影库');
                         </div>
 
                         <!-- 音轨选择 -->
-                        <?php if (count($audioTracks) > 0): ?>
-                            <div class="audio-control">
-                                <button class="ctrl-btn" id="audioBtn" title="音轨">
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
-                                </button>
-                                <div class="audio-menu" id="audioMenu">
+                        <div class="audio-control">
+                            <button class="ctrl-btn" id="audioBtn" title="音轨">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+                            </button>
+                            <div class="audio-menu" id="audioMenu">
+                                <?php if (count($audioTracks) > 0): ?>
                                     <?php foreach ($audioTracks as $at): ?>
                                         <div class="audio-option <?= $at['is_default'] ? 'active' : '' ?>"
                                              data-track-id="<?= $at['id'] ?>"
                                              data-stream="<?= $at['stream_index'] ?>">
                                             <?= e($at['title'] ?: ($at['language'] ?: '音轨 ' . ($at['stream_index'] + 1))) ?>
+                                            <?php if ($at['codec']): ?><span style="font-size:10px;color:var(--text-muted);"><?= e($at['codec']) ?></span><?php endif; ?>
                                             <?php if ($at['channels']): ?>(<?= $at['channels'] ?>ch)<?php endif; ?>
                                         </div>
                                     <?php endforeach; ?>
-                                </div>
+                                <?php else: ?>
+                                    <div class="audio-option" style="color:var(--text-muted);cursor:default;">未检测到音轨</div>
+                                <?php endif; ?>
                             </div>
-                        <?php endif; ?>
+                        </div>
 
                         <!-- 字幕选择 -->
                         <div class="sub-control">
@@ -402,7 +446,6 @@ $siteName = getSetting('site_name', 'NAS影库');
         </div>
     </div>
     <?php endif; ?>
-                                    </div>
                                 <?php endforeach; ?>
                             </div>
                         </div>
@@ -441,6 +484,8 @@ $siteName = getSetting('site_name', 'NAS影库');
         fileName: '<?= addslashes($file['file_name']) ?>',
         audioCount: <?= count($audioTracks) ?>,
         subCount: <?= count($subTracks) ?>,
+        watchHost: <?= json_encode(($user && $group) ? ($permissions['watch_can_host'] ?? false) : true) ?>,
+        watchJoin: <?= json_encode(($user && $group) ? ($permissions['watch_can_join'] ?? false) : true) ?>,
     };
     </script>
     <script src="/assets/js/player.js"></script>
@@ -492,6 +537,17 @@ $siteName = getSetting('site_name', 'NAS影库');
         });
     })();
     </script>
+
+    <!-- 一起看弹窗 -->
+    <div class="modal-overlay" id="watchModal" style="display:none;">
+        <div class="modal-content" style="max-width:440px;background:rgba(20,20,40,0.98);">
+            <button class="modal-close" onclick="closeWatchModal()">&times;</button>
+            <div style="padding:24px;" id="watchModalContent">
+                <!-- 动态内容由JS填充 -->
+            </div>
+        </div>
+    </div>
+
     <?php endif; ?>
 </body>
 </html>

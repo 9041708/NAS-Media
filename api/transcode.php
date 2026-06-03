@@ -181,7 +181,18 @@ try {
             if (!$file) jsonResponse(['error' => '文件不存在'], 404);
 
             $audioTracks = db()->fetchAll('SELECT * FROM audio_tracks WHERE file_id = ? ORDER BY stream_index', [$fileId]);
-            if (count($audioTracks) <= 1) {
+
+            $browserCodecs = ['aac', 'mp3', 'opus', 'vorbis', 'flac', 'pcm_s16le', 'pcm_s24le'];
+            $needsAudioTranscode = false;
+            foreach ($audioTracks as $at) {
+                $codec = strtolower($at['codec'] ?? '');
+                if ($codec && !in_array($codec, $browserCodecs, true)) {
+                    $needsAudioTranscode = true;
+                    break;
+                }
+            }
+
+            if (count($audioTracks) <= 1 && !$needsAudioTranscode) {
                 jsonResponse(['playlist' => '/api/stream.php?id=' . $fileId, 'multi_track' => false]);
                 break;
             }
@@ -198,15 +209,34 @@ try {
             $cached = file_exists($cacheKey) ? (int)file_get_contents($cacheKey) : 0;
             $needsRebuild = $cached !== $currentMtime || !file_exists($masterPath) || !file_exists($videoPath);
 
+            // bust cache if audio transcode setting changed
+            $audioFlag = $needsAudioTranscode ? '_aac' : '_copy';
+            $cachedFlag = file_exists($cacheKey . $audioFlag) ? true : false;
+            $needsRebuild = $needsRebuild || !$cachedFlag;
+
             if ($needsRebuild) {
+                // Clear old flag files
+                @unlink($cacheKey . '_copy');
+                @unlink($cacheKey . '_aac');
+
                 $ffmpeg = new FFmpeg();
-                $ffmpegCmd = sprintf(
-                    '%s -y -i "%s" -map 0:v:0 -map 0:a? -c copy -hls_time 8 -hls_list_size 0 -hls_segment_filename "%s/video_%%d.ts" -f hls "%s"',
-                    $ffmpeg->getFfmpegPath(),
-                    addslashes($file['file_path']),
-                    addslashes($outputDir),
-                    addslashes($videoPath)
-                );
+                if ($needsAudioTranscode) {
+                    $ffmpegCmd = sprintf(
+                        '%s -y -i "%s" -map 0:v:0 -map 0:a? -c:v copy -c:a aac -b:a 192k -hls_time 8 -hls_list_size 0 -hls_segment_filename "%s/video_%%d.ts" -f hls "%s"',
+                        $ffmpeg->getFfmpegPath(),
+                        addslashes($file['file_path']),
+                        addslashes($outputDir),
+                        addslashes($videoPath)
+                    );
+                } else {
+                    $ffmpegCmd = sprintf(
+                        '%s -y -i "%s" -map 0:v:0 -map 0:a? -c copy -hls_time 8 -hls_list_size 0 -hls_segment_filename "%s/video_%%d.ts" -f hls "%s"',
+                        $ffmpeg->getFfmpegPath(),
+                        addslashes($file['file_path']),
+                        addslashes($outputDir),
+                        addslashes($videoPath)
+                    );
+                }
 
                 exec($ffmpegCmd . ' 2>&1', $out, $code);
 
@@ -221,6 +251,7 @@ try {
 
                 file_put_contents($masterPath, $master);
                 file_put_contents($cacheKey, $currentMtime);
+                file_put_contents($cacheKey . $audioFlag, '1');
 
                 $infoPath = $outputDir . '/tracks.json';
                 file_put_contents($infoPath, json_encode(['audio' => $audioTracks]));
@@ -231,6 +262,7 @@ try {
                 'segment_prefix' => '/api/transcode.php?action=multi_segment&file_id=' . $fileId . '&seg=',
                 'audio_tracks' => $audioTracks,
                 'multi_track' => true,
+                'audio_transcoded' => $needsAudioTranscode,
             ]);
             break;
 

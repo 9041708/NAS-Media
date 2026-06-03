@@ -332,47 +332,65 @@
     pointer-events: none;
     z-index: 10;
 }
-.danmaku-input {
-    position: absolute;
-    bottom: 80px; left: 50%;
-    transform: translateX(-50%);
-    z-index: 60;
-    display: flex;
-    gap: 6px;
-    padding: 8px 12px;
-    background: rgba(0,0,0,0.75);
-    border-radius: 8px;
+/* 弹幕发送栏（内嵌在控制栏中） */
+.danmaku-bar { margin-bottom: 8px; }
+.danmaku-bar-row {
+    display: flex; align-items: center; gap: 6px;
+}
+.danmaku-bar-label {
+    font-size: 12px; color: #fb7299; white-space: nowrap;
+    margin-right: 2px;
+}
+.danmaku-bar-row input {
+    flex: 1; min-width: 0;
+    padding: 7px 12px;
+    background: rgba(255,255,255,0.08);
     border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 20px;
+    color: #fff; font-size: 13px; outline: none;
+    transition: border-color 0.2s;
 }
-.danmaku-input input {
-    width: 200px;
-    padding: 6px 10px;
-    background: rgba(255,255,255,0.1);
-    border: 1px solid rgba(255,255,255,0.2);
-    border-radius: 4px;
-    color: #fff;
-    font-size: 13px;
-    outline: none;
-}
-.danmaku-input input:focus { border-color: var(--accent); }
-.danmaku-input select {
-    padding: 4px;
-    background: rgba(255,255,255,0.1);
-    border: 1px solid rgba(255,255,255,0.2);
-    border-radius: 4px;
-    color: #fff;
-    font-size: 12px;
-    outline: none;
+.danmaku-bar-row input:focus { border-color: rgba(251,114,153,0.5); }
+.danmaku-bar-row input::placeholder { color: rgba(255,255,255,0.3); font-size: 12px; }
+.danmaku-bar-sel {
+    padding: 6px 8px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    color: #ccc; font-size: 12px; outline: none;
     cursor: pointer;
 }
-.danmaku-input button {
-    padding: 6px 14px;
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 13px;
+.danmaku-bar-send {
+    padding: 7px 14px;
+    background: rgba(251,114,153,0.8);
+    border: none; border-radius: 20px;
+    color: #fff; font-size: 12px; cursor: pointer;
     white-space: nowrap;
+    transition: background 0.2s;
 }
-.danmaku-input button:hover { background: var(--accent-hover); }
+.danmaku-bar-send:hover { background: #fb7299; }
+.danmaku-bar-import {
+    display: flex; align-items: center; gap: 6px;
+    margin-top: 6px; padding-top: 6px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+}
+.danmaku-bar-import input {
+    flex: 1; min-width: 0;
+    padding: 5px 10px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 14px;
+    color: #ccc; font-size: 11px; outline: none;
+}
+.danmaku-bar-import input:focus { border-color: rgba(251,114,153,0.3); }
+.danmaku-bar-import input::placeholder { color: rgba(255,255,255,0.25); font-size: 11px; }
+.danmaku-bar-import button {
+    padding: 5px 12px;
+    background: rgba(251,114,153,0.2);
+    border: 1px solid rgba(251,114,153,0.3);
+    border-radius: 14px;
+    color: #fb7299; font-size: 11px; cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.2s;
+}
+.danmaku-bar-import button:hover { background: rgba(251,114,153,0.35); }

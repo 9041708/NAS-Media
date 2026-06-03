@@ -1153,6 +1153,9 @@
             list.innerHTML = groups.map(g => {
                 let perms = {};
                 try { perms = JSON.parse(g.permissions || '{}'); } catch (e) {}
+                const wh = perms.watch_can_host !== false ? '✓' : '✗';
+                const wj = perms.watch_can_join !== false ? '✓' : '✗';
+                const wm = perms.watch_max_guests > 0 ? perms.watch_max_guests + '人' : '不限';
                 return `<div class="library-card" data-id="${g.id}">
                     <div class="lib-info">
                         <div class="lib-name">${escHtml(g.name)} ${g.is_default == 1 ? '<span class="admin-badge" style="font-size:11px;margin-left:8px;">默认</span>' : ''}</div>
@@ -1160,6 +1163,7 @@
                             <span>可看全部: ${perms.can_see_all ? '是' : '仅非VIP'}</span>
                             <span>剧集限制: ${perms.episode_limit > 0 ? '每季' + perms.episode_limit + '集' : '无'}</span>
                             <span>电影限制: ${perms.movie_minutes_limit > 0 ? perms.movie_minutes_limit + '分钟' : '无'}</span>
+                            <span>一起看: ${wh}房 ${wj}入(${wm})</span>
                         </div>
                     </div>
                     <div class="lib-actions">
@@ -1180,6 +1184,9 @@
                     $('#groupCanSeeAll').checked = perms.can_see_all !== false;
                     $('#groupEpisodeLimit').value = perms.episode_limit || 0;
                     $('#groupMovieLimit').value = perms.movie_minutes_limit || 0;
+                    $('#groupWatchHost').checked = perms.watch_can_host !== false;
+                    $('#groupWatchJoin').checked = perms.watch_can_join !== false;
+                    $('#groupWatchMaxGuests').value = perms.watch_max_guests || 0;
                     $('#groupIsDefault').checked = g.is_default == 1;
                     $('#groupModalTitle').textContent = '编辑权限组';
                     $('#groupModal').classList.add('active');
@@ -1209,6 +1216,9 @@
                     can_see_all: $('#groupCanSeeAll').checked,
                     episode_limit: parseInt($('#groupEpisodeLimit').value) || 0,
                     movie_minutes_limit: parseInt($('#groupMovieLimit').value) || 0,
+                    watch_can_host: $('#groupWatchHost').checked,
+                    watch_can_join: $('#groupWatchJoin').checked,
+                    watch_max_guests: parseInt($('#groupWatchMaxGuests').value) || 0,
                 }),
                 is_default: $('#groupIsDefault').checked ? 1 : 0,
             };
@@ -1613,6 +1623,7 @@
             if (tab === 'settings') loadSettings();
             if (tab === 'about') loadAbout();
             if (tab === 'vip') loadVipPage();
+            if (tab === 'collections') loadAdminCollections();
         });
     });
 
@@ -1798,6 +1809,278 @@
     function hideVipProgress() {
         const bar = $('#vipProgressBar');
         if (bar) bar.remove();
+    }
+
+    // ===== 合集管理 =====
+    let allCollections = [];
+    let selectedColId = null;
+
+    async function loadAdminCollections(search) {
+        const container = $('#colList');
+        if (!container) return;
+        container.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;font-size:13px;">加载中...</div>';
+        try {
+            let url = '/api/media.php?action=admin_list_collections';
+            if (search) url += '&search=' + encodeURIComponent(search);
+            allCollections = await api(url);
+            if (!Array.isArray(allCollections)) allCollections = [];
+            renderColList();
+        } catch (e) {
+            container.innerHTML = '<div style="color:#ff6b6b;padding:20px;text-align:center;">加载失败: ' + e.message + '</div>';
+        }
+    }
+
+    function renderColList() {
+        const container = $('#colList');
+        if (!container) return;
+        if (allCollections.length === 0) {
+            container.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;font-size:13px;">暂无合集</div>';
+            return;
+        }
+        container.innerHTML = allCollections.map(c => {
+            const owner = c.display_name || c.username || '未知';
+            return `<div class="col-list-item" data-id="${c.id}" style="padding:10px 12px;border-radius:8px;margin-bottom:4px;background:${selectedColId === c.id ? 'rgba(59,130,246,0.12)' : 'rgba(255,255,255,0.02)'};border:1px solid ${selectedColId === c.id ? 'var(--accent)' : 'var(--border)'};cursor:pointer;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <span style="font-weight:500;font-size:14px;">${escHtml(c.name)}</span>
+                    <span style="font-size:11px;color:var(--text-muted);">${c.item_count} 项</span>
+                </div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">创建者: ${escHtml(owner)}</div>
+            </div>`;
+        }).join('');
+
+        $$('#colList .col-list-item').forEach(item => {
+            item.addEventListener('click', () => openColDetail(parseInt(item.dataset.id)));
+        });
+    }
+
+    async function openColDetail(colId) {
+        selectedColId = colId;
+        renderColList();
+        const panel = $('#colDetailPanel');
+        if (!panel) return;
+        panel.style.display = '';
+
+        const col = allCollections.find(c => c.id === colId);
+        if (!col) return;
+
+        const header = $('#colDetailHeader');
+        const itemsContainer = $('#colDetailItems');
+        header.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;">
+            <h3 style="margin:0;font-size:16px;">${escHtml(col.name)}</h3>
+            <div style="display:flex;gap:6px;">
+                <button class="btn btn-xs btn-outline" id="colEditBtn" title="编辑">✏️</button>
+                <button class="btn btn-xs btn-outline" id="colAddMediaBtn" title="添加媒体">＋</button>
+                <button class="btn btn-xs btn-danger" id="colDeleteBtn" title="删除合集">🗑</button>
+            </div>
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">
+            创建者: ${escHtml(col.display_name || col.username || '未知')} | ${col.item_count} 项
+        </div>
+        ${col.overview ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">' + escHtml(col.overview) + '</div>' : ''}`;
+
+        itemsContainer.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;font-size:13px;">加载中...</div>';
+
+        // Edit button
+        $('#colEditBtn').addEventListener('click', () => showColEditModal(col));
+
+        // Add media button
+        $('#colAddMediaBtn').addEventListener('click', () => showColAddModal(colId));
+
+        // Delete button
+        $('#colDeleteBtn').addEventListener('click', async () => {
+            if (!confirm('确定删除合集「' + col.name + '」吗？此操作不可撤销。')) return;
+            const res = await api('/api/media.php?action=delete_collection', {
+                method: 'POST',
+                body: JSON.stringify({ id: colId }),
+            });
+            if (res.success) {
+                toast('合集已删除');
+                $('#colDetailPanel').style.display = 'none';
+                selectedColId = null;
+                loadAdminCollections();
+            } else {
+                toast(res.error || '删除失败', 'error');
+            }
+        });
+
+        await loadColItems(colId);
+    }
+
+    async function loadColItems(colId) {
+        const container = $('#colDetailItems');
+        if (!container) return;
+        try {
+            const items = await api('/api/media.php?action=admin_collection_items&id=' + colId);
+            if (!Array.isArray(items) || items.length === 0) {
+                container.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;font-size:13px;">暂无内容</div>';
+                return;
+            }
+            container.innerHTML = items.map(item => {
+                const poster = item.poster_path ? posterUrl(item.poster_path, 'w92') : '';
+                return `<div class="col-media-item" style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;margin-bottom:4px;background:rgba(255,255,255,0.03);border:1px solid var(--border);">
+                    ${poster ? `<img src="${poster}" style="width:40px;height:56px;object-fit:cover;border-radius:4px;" onerror="this.style.display='none'">` : ''}
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(item.title)}</div>
+                        <div style="font-size:11px;color:var(--text-muted);">${escHtml(item.type === 'tv' ? '电视剧' : item.type === 'movie' ? '电影' : '其他')} ${item.year ? '(' + item.year + ')' : ''}</div>
+                    </div>
+                    <button class="btn btn-xs btn-outline" onclick="removeFromCollection(${colId}, ${item.media_id}, this)" style="color:#ff6b6b;border-color:rgba(255,107,107,0.3);">✕</button>
+                </div>`;
+            }).join('');
+        } catch (e) {
+            container.innerHTML = '<div style="color:#ff6b6b;padding:20px;">加载失败</div>';
+        }
+    }
+
+    window.removeFromCollection = async function(colId, mediaId, btn) {
+        if (!confirm('确定从合集中移除此项吗？')) return;
+        const res = await api('/api/media.php?action=remove_from_collection', {
+            method: 'POST',
+            body: JSON.stringify({ collection_id: colId, media_id: mediaId }),
+        });
+        if (res.success) {
+            toast('已移除');
+            loadColItems(colId);
+            loadAdminCollections();
+        } else {
+            toast(res.error || '移除失败', 'error');
+        }
+    };
+
+    function showColEditModal(col) {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `<div class="modal-content" style="max-width:420px;background:rgba(20,20,40,0.98);">
+            <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+            <div style="padding:24px;">
+                <h3 style="margin-bottom:16px;">编辑合集</h3>
+                <div class="form-group">
+                    <label>合集名称</label>
+                    <input type="text" id="colEditName" value="${escHtml(col.name)}" style="width:100%;padding:10px 14px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px;outline:none;">
+                </div>
+                <div class="form-group">
+                    <label>简介</label>
+                    <textarea id="colEditOverview" rows="3" style="width:100%;padding:10px 14px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px;outline:none;resize:vertical;">${escHtml(col.overview || '')}</textarea>
+                </div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+                    <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">取消</button>
+                    <button class="btn btn-primary" id="colSaveBtn">保存</button>
+                </div>
+            </div>
+        </div>`;
+        document.body.appendChild(modal);
+        modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+        modal.querySelector('#colSaveBtn').addEventListener('click', async () => {
+            const name = modal.querySelector('#colEditName').value.trim();
+            const overview = modal.querySelector('#colEditOverview').value.trim();
+            if (!name) { toast('名称不能为空', 'error'); return; }
+            const res = await api('/api/media.php?action=update_collection', {
+                method: 'POST',
+                body: JSON.stringify({ id: col.id, name, overview }),
+            });
+            if (res.success) {
+                toast('合集已更新');
+                modal.remove();
+                loadAdminCollections();
+                openColDetail(col.id);
+            } else {
+                toast(res.error || '更新失败', 'error');
+            }
+        });
+    }
+
+    async function showColAddModal(colId) {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `<div class="modal-content" style="max-width:560px;max-height:80vh;overflow-y:auto;background:rgba(20,20,40,0.98);">
+            <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+            <div style="padding:24px;">
+                <h3 style="margin-bottom:16px;">添加媒体到合集</h3>
+                <div style="display:flex;gap:8px;margin-bottom:12px;">
+                    <input type="text" id="colAddSearch" placeholder="搜索媒体标题..." style="flex:1;padding:10px 14px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px;outline:none;">
+                    <button class="btn btn-primary" id="colAddSearchBtn">搜索</button>
+                </div>
+                <div id="colAddResults" style="max-height:350px;overflow-y:auto;">
+                    <div style="color:var(--text-muted);padding:10px;text-align:center;font-size:13px;">输入标题搜索媒体</div>
+                </div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+                    <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+                </div>
+            </div>
+        </div>`;
+        document.body.appendChild(modal);
+        modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+        modal.querySelector('#colAddSearchBtn').addEventListener('click', async () => {
+            const q = modal.querySelector('#colAddSearch').value.trim();
+            if (!q) return;
+            const results = document.getElementById('colAddResults');
+            if (results) results.innerHTML = '<div style="color:var(--text-muted);padding:10px;text-align:center;">搜索中...</div>';
+            const items = await api('/api/media.php?action=list&search=' + encodeURIComponent(q) + '&limit=30');
+            const rows = items?.items || [];
+            if (rows.length === 0) {
+                if (results) results.innerHTML = '<div style="color:var(--text-muted);padding:10px;text-align:center;">无结果</div>';
+                return;
+            }
+            if (results) {
+                results.innerHTML = rows.map(item => {
+                    const poster = item.poster_path ? posterUrl(item.poster_path, 'w92') : '';
+                    return `<div class="col-media-item" style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;margin-bottom:4px;background:rgba(255,255,255,0.03);border:1px solid var(--border);cursor:pointer;">
+                        ${poster ? `<img src="${poster}" style="width:40px;height:56px;object-fit:cover;border-radius:4px;" onerror="this.style.display='none'">` : ''}
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(item.title)}</div>
+                            <div style="font-size:11px;color:var(--text-muted);">${escHtml(item.type === 'tv' ? '电视剧' : item.type === 'movie' ? '电影' : '其他')} ${item.year ? '(' + item.year + ')' : ''}</div>
+                        </div>
+                        <button class="btn btn-xs btn-primary add-col-media-btn" data-media-id="${item.id}">添加</button>
+                    </div>`;
+                }).join('');
+
+                results.querySelectorAll('.add-col-media-btn').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        const mediaId = parseInt(btn.dataset.mediaId);
+                        const res = await api('/api/media.php?action=add_media_to_collection', {
+                            method: 'POST',
+                            body: JSON.stringify({ collection_id: colId, media_id: mediaId }),
+                        });
+                        if (res.success) {
+                            toast('已添加到合集');
+                            loadColItems(colId);
+                            loadAdminCollections();
+                            modal.remove();
+                        } else {
+                            toast(res.error || '添加失败', 'error');
+                        }
+                    });
+                });
+            }
+        });
+
+        // Enter key search
+        modal.querySelector('#colAddSearch').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.isComposing) modal.querySelector('#colAddSearchBtn').click();
+        });
+    }
+
+    if ($('#colSearchBtn')) {
+        $('#colSearchBtn').addEventListener('click', () => {
+            const q = $('#colSearch')?.value?.trim() || '';
+            loadAdminCollections(q);
+        });
+        $('#colSearch').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.isComposing) {
+                const q = e.target.value.trim();
+                loadAdminCollections(q);
+            }
+        });
+    }
+
+    if ($('#colRefreshBtn')) {
+        $('#colRefreshBtn').addEventListener('click', () => {
+            if ($('#colSearch')) $('#colSearch').value = '';
+            loadAdminCollections();
+        });
     }
 
     // Init

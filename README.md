@@ -1,6 +1,6 @@
 # NAS影库 - 自建媒体服务器
 
-> **v3.2.0** | 类似 Emby/Plex 的自建媒体服务器，专为 NAS 设计。PHP + MySQL 架构，轻量易部署。
+> **v3.3.0** | 类似 Emby/Plex 的自建媒体服务器，专为 NAS 设计。PHP + MySQL 架构，轻量易部署。
 
 ## 功能特性
 
@@ -33,7 +33,9 @@
 - **自动播放** - 页面加载自动静音播放，点击取消静音
 - **新标签页打开** - 所有播放入口新标签页打开，避免返回504
 - **播放器剧集信息** - 左上角显示剧名+第X季第Y集+TMDB集名
-- **弹幕系统** - Canvas弹幕引擎（滚动/顶部/底部），支持B站弹幕导入
+- **弹幕系统** - Canvas弹幕引擎（滚动/顶部/底部），支持B站视频链接一键导入弹幕，发送栏内嵌控制栏
+- **一起看（同步观影）** - 创建观影房间，分享4位码邀请他人同步观看，播放进度实时同步
+- **详情页媒体信息** - 剧集卡片显示音轨/字幕概要，"媒体信息"板块展开完整编码详情
 
 ### 用户系统
 - **多用户** - 管理员/普通用户角色，管理员可创建/编辑/删除用户
@@ -47,6 +49,7 @@
 - **媒体库管理** - 添加/删除/扫描/排序媒体库
 - **元数据管理** - 树形目录浏览，展开折叠，内联编辑，TMDB搜索链接
 - **VIP管理** - 独立VIP管理页面，按媒体库批量设为VIP/取消VIP
+- **合集管理** - 管理员可查看/编辑/删除所有用户合集，增删合集中媒体
 - **用户管理** - 用户列表、创建/编辑、权限组配置
 - **转码管理** - 搜索影片选择文件进行 HLS 转码
 - **活跃会话** - 实时查看在线播放用户
@@ -98,16 +101,17 @@ docker-compose up -d
 
 ```
 ├── api/                    # API 接口
-│   ├── media.php           # 媒体数据接口 (含 media_tree/batch_vip/scrape_meta)
+│   ├── media.php           # 媒体数据接口 (含合集管理/batch_vip/scrape_meta)
 │   ├── scan.php            # 扫描管理接口 (含 reorder_libraries)
 │   ├── stream.php          # 视频流接口 (Range分段)
 │   ├── subtitle.php        # 字幕服务接口 (含 search/download)
-│   ├── transcode.php       # 转码管理接口 (含 multi_hls 多音轨)
+│   ├── transcode.php       # 转码管理接口 (含 multi_hls 多音轨+单音轨AAC转码)
 │   ├── image.php           # 图片代理/缓存 (TMDB海报本地缓存7天)
 │   ├── danmaku.php          # 弹幕接口 (list/send/bilibili_import)
+│   ├── watch.php           # 一起看接口 (create_room/join_room/sync_state/poll_state)
 │   ├── activity.php        # 活跃会话接口
 │   ├── browse.php          # 服务器目录浏览器
-│   └── auth.php            # 认证/用户管理接口
+│   └── auth.php            # 认证/用户管理/权限组接口
 ├── includes/               # 核心类库
 │   ├── Database.php        # PDO 数据库封装
 │   ├── TmdbApi.php         # TMDB API 客户端 (带缓存)
@@ -119,7 +123,10 @@ docker-compose up -d
 │   └── session.php         # Session 安全配置
 ├── migrations/             # 数据库迁移脚本
 │   ├── 1_initial_settings.sql
-│   └── 2_danmaku.sql
+│   ├── 2_danmaku.sql
+│   ├── 3_perf_indexes.sql
+│   ├── 4_collections.sql
+│   └── 5_watch_together.sql
 ├── assets/
 │   ├── css/
 │   │   ├── style.css       # 主样式 (移动端汉堡菜单/响应式)
@@ -128,7 +135,7 @@ docker-compose up -d
 │   │   └── admin.css       # 后台管理样式 (树形视图/VIP管理)
 │   ├── js/
 │   │   ├── app.js          # 前端主逻辑 (图片代理/移动导航)
-│   │   ├── player.js       # 全功能播放器 (弹幕引擎/B站导入/多音轨)
+│   │   ├── player.js       # 全功能播放器 (弹幕引擎/链接导入/一起看/多音轨)
 │   │   ├── notify.js       # 通知轮询
 │   │   └── admin.js        # 后台管理 (元数据树/VIP管理)
 │   └── images/             # SVG 占位图
@@ -196,6 +203,20 @@ docker-compose up -d
 现有迁移：
 - `1_initial_settings` — 补建配置项
 - `2_danmaku` — 弹幕表
+- `3_perf_indexes` — 性能索引
+- `4_collections` — 合集表
+- `5_watch_together` — 一起看表
+
+## 一起看（同步观影）
+
+点击播放器控制栏 👥 按钮：
+
+1. **创建房间** → 获得4位分享码（如 `XK9M`）
+2. **分享给好友** → 对方在同一视频页面输入码加入
+3. **自动同步** → 房主播放/暂停/拖动进度条，所有成员2.5秒内同步
+4. **URL邀请** → 发送 `播放器地址?watch=XK9M`，对方打开即自动加入
+
+权限由管理后台「权限组」控制：可分别设置每组的创建房间/加入房间权限，以及房间最大人数。
 
 ## 弹幕
 
@@ -203,7 +224,10 @@ docker-compose up -d
 播放器控制栏点击"弹幕"按钮开启，输入文字后回车发送，支持颜色和位置选择。打开后每5秒自动拉取其他用户新弹幕。
 
 ### B站弹幕导入
-开启弹幕后下方显示粉色"B站导入"栏，输入B站视频cid即可拉取B站弹幕。cid获取方式：打开B站视频 → F12 → 搜索 `"cid":` 复制数字。
+开启弹幕后控制栏下方显示粉色"B站导入"栏，直接粘贴B站视频链接即可自动解析导入。支持：
+- 视频页链接：`https://www.bilibili.com/video/BV1xx...`
+- 番剧页链接：`https://www.bilibili.com/bangumi/play/ep12345`
+- 纯BV号：`BV1xx411c7mD`
 
 ## 移动端
 

@@ -197,6 +197,7 @@
     function updateVolumeIcon() {
         const iconVol = $('#volumeBtn .icon-vol');
         const iconMute = $('#volumeBtn .icon-mute');
+        if (!iconVol || !iconMute) return;
         if (video.muted || video.volume === 0) {
             iconVol.style.display = 'none';
             iconMute.style.display = '';
@@ -206,6 +207,7 @@
         }
         volumeSlider.value = video.muted ? 0 : video.volume;
     }
+    updateVolumeIcon();
 
     const unmuteHint = $('#unmuteHint');
     if (unmuteHint && video.muted) {
@@ -254,6 +256,19 @@
     }
 
     // ===== 音轨切换 =====
+    let pendingAudioIdx = -1;
+
+    function switchAudioTrack(streamIndex) {
+        currentAudioIdx = streamIndex;
+        if (hlsInstance && multiHlsReady) {
+            try {
+                hlsInstance.audioTrack = streamIndex;
+            } catch (err) { /* ignore */ }
+        } else if (PD.audioCount >= 1 && !multiHlsReady) {
+            pendingAudioIdx = streamIndex;
+        }
+    }
+
     if ($('#audioBtn')) {
         $('#audioBtn').addEventListener('click', (e) => {
             e.stopPropagation();
@@ -268,23 +283,11 @@
                 $('#audioMenu').classList.remove('show');
 
                 const streamIndex = parseInt(opt.dataset.stream);
-                currentAudioIdx = streamIndex;
-
-                if (hlsInstance) {
-                    try {
-                        hlsInstance.audioTrack = streamIndex;
-                    } catch (err) {}
-                }
-
-                if (multiHlsReady && hlsInstance) {
-                    try {
-                        hlsInstance.audioTrack = streamIndex;
-                    } catch (err) {}
-                }
+                switchAudioTrack(streamIndex);
             });
         });
 
-        if (PD.audioCount > 1) {
+        if (PD.audioCount >= 1) {
             initMultiTrackHls();
         }
     }
@@ -298,12 +301,12 @@
     $$('.sub-option').forEach(opt => {
         opt.addEventListener('click', async (e) => {
             e.stopPropagation();
-            $$('.sub-option').forEach(o => o.classList.remove('active'));
-            opt.classList.add('active');
-            $('#subMenu').classList.remove('show');
-
             const trackId = opt.dataset.trackId;
+
             if (trackId === 'off') {
+                $$('.sub-option').forEach(o => o.classList.remove('active'));
+                opt.classList.add('active');
+                $('#subMenu').classList.remove('show');
                 currentSubTrack = null;
                 currentSubContent = null;
                 subtitleOverlay.innerHTML = '';
@@ -311,7 +314,12 @@
                 return;
             }
 
-            await loadSubtitle(trackId);
+            const ok = await loadSubtitle(trackId);
+            if (ok) {
+                $$('.sub-option').forEach(o => o.classList.remove('active'));
+                opt.classList.add('active');
+                $('#subMenu').classList.remove('show');
+            }
         });
     });
 
@@ -323,8 +331,11 @@
             currentSubContent = parseVtt(text);
             currentSubTrack = trackId;
             disableNativeSubtitles();
+            return true;
         } catch (e) {
             console.error('字幕加载失败:', e);
+            alert('字幕加载失败，请尝试其他字幕或搜索下载字幕');
+            return false;
         }
     }
 
@@ -876,19 +887,22 @@
         if (hlsInstance) hlsInstance.destroy();
         if (typeof Hls === 'undefined' || !Hls.isSupported()) return;
 
+        const wasMuted = video.muted;
+
         hlsInstance = new Hls({ startPosition: startTime });
         hlsInstance.loadSource(playlistUrl);
         hlsInstance.attachMedia(video);
         hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
             multiHlsReady = true;
-            if (wasPlaying) video.play();
-            $$('.audio-option').forEach(opt => {
-                opt.addEventListener('click', (e) => {
-                    if (hlsInstance && multiHlsReady) {
-                        try { hlsInstance.audioTrack = parseInt(opt.dataset.stream); } catch (err) {}
-                    }
-                }, { once: false });
-            });
+            video.muted = wasMuted;
+            if (wasPlaying) video.play().catch(() => {});
+
+            if (pendingAudioIdx >= 0) {
+                try { hlsInstance.audioTrack = pendingAudioIdx; } catch (err) {}
+                pendingAudioIdx = -1;
+            } else if (currentAudioIdx >= 0) {
+                try { hlsInstance.audioTrack = currentAudioIdx; } catch (err) {}
+            }
         });
     }
 
@@ -1030,7 +1044,7 @@
 
     // ===== 弹幕系统 =====
     const danmakuCanvas = $('#danmakuCanvas');
-    const danmakuInput = $('#danmakuInput');
+    const danmakuBar = $('#danmakuBar');
     const danmakuText = $('#danmakuText');
     const danmakuSend = $('#danmakuSend');
     const danmakuColor = $('#danmakuColor');
@@ -1127,22 +1141,18 @@
     function toggleDanmaku() {
         danmakuEnabled = !danmakuEnabled;
         if (danmakuEnabled) {
-            danmakuInput.style.display = 'flex';
+            danmakuBar.style.display = '';
             danmakuLabel.style.color = 'var(--accent)';
             danmakuCanvas.style.display = 'block';
-            const danmakuImport = $('#danmakuImport');
-            if (danmakuImport) danmakuImport.style.display = 'block';
             danmakuData.forEach(d => d._spawned = false);
             danmakuPool = [];
             if (!danmakuAnimId) renderDanmakuFrame();
             if (!danmakuLoadTimer) startDanmakuPolling();
             setTimeout(() => danmakuText?.focus(), 100);
         } else {
-            danmakuInput.style.display = 'none';
+            danmakuBar.style.display = 'none';
             danmakuLabel.style.color = '';
             danmakuCanvas.style.display = 'none';
-            const danmakuImport = $('#danmakuImport');
-            if (danmakuImport) danmakuImport.style.display = 'none';
             if (danmakuAnimId) { cancelAnimationFrame(danmakuAnimId); danmakuAnimId = null; }
             if (danmakuCtx) danmakuCtx.clearRect(0, 0, danmakuCanvas.width, danmakuCanvas.height);
             stopDanmakuPolling();
@@ -1161,6 +1171,8 @@
     async function sendDanmaku() {
         const content = danmakuText.value.trim();
         if (!content) return;
+        danmakuSend.disabled = true;
+        danmakuSend.textContent = '...';
         try {
             const res = await fetch('/api/danmaku.php?action=send', {
                 method: 'POST',
@@ -1176,10 +1188,18 @@
             const data = await res.json();
             if (data.success && data.danmaku) {
                 danmakuData.push(data.danmaku);
+                danmakuText.value = '';
+                danmakuText.focus();
+            } else {
+                danmakuText.style.borderColor = '#ff6b6b';
+                setTimeout(() => { danmakuText.style.borderColor = ''; }, 1500);
             }
-            danmakuText.value = '';
-            danmakuText.focus();
-        } catch (e) { /* ignore */ }
+        } catch (e) {
+            danmakuText.style.borderColor = '#ff6b6b';
+            setTimeout(() => { danmakuText.style.borderColor = ''; }, 1500);
+        }
+        danmakuSend.disabled = false;
+        danmakuSend.textContent = '发送';
     }
 
     if (danmakuCanvas) {
@@ -1190,15 +1210,15 @@
         if (danmakuBtn) danmakuBtn.addEventListener('click', toggleDanmaku);
         if (danmakuSend) danmakuSend.addEventListener('click', sendDanmaku);
         if (danmakuText) danmakuText.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); sendDanmaku(); }
+            if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); sendDanmaku(); }
         });
 
         const bilibiliImportBtn = $('#bilibiliImportBtn');
-        const bilibiliCid = $('#bilibiliCid');
-        if (bilibiliImportBtn && bilibiliCid) {
-            bilibiliImportBtn.addEventListener('click', () => bilibiliImport(bilibiliCid.value.trim()));
-            bilibiliCid.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') { e.preventDefault(); bilibiliImport(bilibiliCid.value.trim()); }
+        const bilibiliUrl = $('#bilibiliUrl');
+        if (bilibiliImportBtn && bilibiliUrl) {
+            bilibiliImportBtn.addEventListener('click', () => bilibiliImport(bilibiliUrl.value.trim()));
+            bilibiliUrl.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); bilibiliImport(bilibiliUrl.value.trim()); }
             });
         }
 
@@ -1208,10 +1228,16 @@
         });
     }
 
-    // ===== B站弹幕导入 =====
-    async function bilibiliImport(cid) {
-        if (!cid) { alert('请输入B站视频cid'); return; }
+    // ===== B站弹幕导入（支持视频链接自动解析） =====
+    async function bilibiliImport(input) {
+        if (!input) return;
         try {
+            const cid = parseBilibiliUrl(input);
+            if (!cid) { alert('无法识别该链接，请使用B站视频页面链接（如 https://www.bilibili.com/video/BV...）'); return; }
+
+            const btn = $('#bilibiliImportBtn');
+            if (btn) { btn.disabled = true; btn.textContent = '导入中...'; }
+
             const res = await fetch('/api/danmaku.php?action=bilibili_import', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1222,15 +1248,440 @@
                 alert('成功导入 ' + data.count + ' 条弹幕');
                 danmakuData = [];
                 loadDanmaku();
+                if (bilibiliUrl) bilibiliUrl.value = '';
+            } else {
+                alert('导入失败: ' + (data.error || '未知错误'));
+            }
+            if (btn) { btn.disabled = false; btn.textContent = '导入弹幕'; }
+        } catch (e) {
+            alert('导入失败: 网络错误');
+            const btn = $('#bilibiliImportBtn');
+            if (btn) { btn.disabled = false; btn.textContent = '导入弹幕'; }
+        }
+    }
+
+    function parseBilibiliUrl(url) {
+        url = url.trim();
+
+        // Already a CID (numeric string)
+        if (/^\d+$/.test(url)) return url;
+
+        // Extract BV/av/ep from URL
+        let m;
+
+        // video/BV1xx411c7mD
+        m = url.match(/bilibili\.com\/video\/(BV[a-zA-Z0-9]+)/);
+        if (m) return fetchCidFromApi({ bvid: m[1] });
+
+        // video/av170001
+        m = url.match(/bilibili\.com\/video\/av(\d+)/);
+        if (m) return fetchCidFromApi({ aid: m[1] });
+
+        // bangumi/play/ep12345
+        m = url.match(/bilibili\.com\/bangumi\/play\/ep(\d+)/);
+        if (m) return fetchCidFromApi({ ep_id: m[1] });
+
+        // bangumi/play/ss12345
+        m = url.match(/bilibili\.com\/bangumi\/play\/ss(\d+)/);
+        if (m) return fetchCidFromSeason(m[1]);
+
+        // BV号直接输入
+        m = url.match(/^(BV[a-zA-Z0-9]+)$/);
+        if (m) return fetchCidFromApi({ bvid: m[1] });
+
+        return null;
+    }
+
+    // 同步获取CID（用于parseBilibiliUrl内，此处返回null让异步处理）
+    // 改为：解析后异步请求，由调用者bilibiliImport处理
+    function parseBilibiliUrlSync(url) {
+        url = url.trim();
+        if (/^\d+$/.test(url)) return { type: 'cid', value: url };
+
+        let m;
+        m = url.match(/bilibili\.com\/video\/(BV[a-zA-Z0-9]+)/);
+        if (m) return { type: 'bvid', value: m[1] };
+
+        m = url.match(/bilibili\.com\/video\/av(\d+)/);
+        if (m) return { type: 'aid', value: m[1] };
+
+        m = url.match(/bilibili\.com\/bangumi\/play\/ep(\d+)/);
+        if (m) return { type: 'ep', value: m[1] };
+
+        m = url.match(/bilibili\.com\/bangumi\/play\/ss(\d+)/);
+        if (m) return { type: 'ss', value: m[1] };
+
+        m = url.match(/^(BV[a-zA-Z0-9]+)$/);
+        if (m) return { type: 'bvid', value: m[1] };
+
+        return null;
+    }
+
+    async function resolveCid(info) {
+        if (!info) return null;
+        if (info.type === 'cid') return info.value;
+
+        try {
+            let apiUrl = '';
+            if (info.type === 'bvid') apiUrl = 'https://api.bilibili.com/x/player/pagelist?bvid=' + info.value;
+            else if (info.type === 'aid') apiUrl = 'https://api.bilibili.com/x/player/pagelist?aid=' + info.value;
+            else if (info.type === 'ep') apiUrl = 'https://api.bilibili.com/pgc/view/web/season?ep_id=' + info.value;
+            else if (info.type === 'ss') apiUrl = 'https://api.bilibili.com/pgc/view/web/season?season_id=' + info.value;
+            else return null;
+
+            const res = await fetch(apiUrl);
+            const data = await res.json();
+
+            if (data.code === 0 && data.data) {
+                if (info.type === 'bvid' || info.type === 'aid') {
+                    // pagelist response
+                    if (Array.isArray(data.data) && data.data.length > 0) {
+                        return String(data.data[0].cid);
+                    }
+                } else if (info.type === 'ep' || info.type === 'ss') {
+                    // season response - first episode's CID
+                    const eps = data.data.episodes || [];
+                    if (eps.length > 0) return String(eps[0].cid);
+                }
+            }
+        } catch (e) { /* fall through */ }
+
+        return null;
+    }
+
+    // Rewrite bilibiliImport to be async with URL parsing
+    async function bilibiliImportV2(input) {
+        if (!input) return;
+        const btn = $('#bilibiliImportBtn');
+        try {
+            const info = parseBilibiliUrlSync(input);
+            if (!info) { alert('无法识别该链接，请使用B站视频页面链接'); return; }
+
+            if (btn) { btn.disabled = true; btn.textContent = '解析中...'; }
+
+            const cid = await resolveCid(info);
+            if (!cid) { alert('获取视频信息失败，请检查链接是否正确'); if (btn) { btn.disabled = false; btn.textContent = '导入弹幕'; } return; }
+
+            if (btn) btn.textContent = '导入中...';
+
+            const res = await fetch('/api/danmaku.php?action=bilibili_import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file_id: PD.fileId, cid: String(cid) }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert('成功导入 ' + data.count + ' 条弹幕');
+                danmakuData = [];
+                loadDanmaku();
+                const bilibiliUrl = $('#bilibiliUrl');
+                if (bilibiliUrl) bilibiliUrl.value = '';
             } else {
                 alert('导入失败: ' + (data.error || '未知错误'));
             }
         } catch (e) {
             alert('导入失败: 网络错误');
         }
+        if (btn) { btn.disabled = false; btn.textContent = '导入弹幕'; }
     }
 
-    window.bilibiliImport = bilibiliImport;
+    // Override old function
+    window.bilibiliImport = bilibiliImportV2;
+
+    // Expose parse function for debugging
+    window.bilibiliResolveCid = resolveCid;
+
+    // ===== 一起看（同步观影） =====
+    let watchRoomId = null;
+    let watchRoomCode = null;
+    let watchIsHost = false;
+    let watchPollTimer = null;
+    let watchSyncEnabled = false;
+    let watchLastRemoteTime = 0;
+
+    const watchModal = $('#watchModal');
+    const watchModalContent = $('#watchModalContent');
+
+    if ($('#watchTogetherBtn')) {
+        if (!PD.watchHost && !PD.watchJoin) {
+            $('#watchTogetherBtn').style.display = 'none';
+        } else {
+            $('#watchTogetherBtn').addEventListener('click', () => {
+                if (!PD.watchHost && watchRoomId) {
+                    showWatchRoomPanel();
+                } else if (!PD.watchHost) {
+                    showWatchJoinPanel();
+                } else {
+                    if (watchRoomId) {
+                        showWatchRoomPanel();
+                    } else {
+                        showWatchJoinPanel();
+                    }
+                }
+                watchModal.style.display = 'flex';
+            });
+        }
+    }
+
+    window.closeWatchModal = function() {
+        if (watchModal) watchModal.style.display = 'none';
+    };
+
+    // 点击遮罩关闭
+    if (watchModal) {
+        watchModal.addEventListener('click', (e) => {
+            if (e.target === watchModal) watchModal.style.display = 'none';
+        });
+    }
+
+    function showWatchJoinPanel() {
+        if (!watchModalContent) return;
+        watchModalContent.innerHTML = `
+            <h3 style="margin-bottom:16px;font-size:18px;">一起看</h3>
+            <div style="margin-bottom:20px;">
+                ${PD.watchHost ? '<button class="btn btn-primary" id="watchCreateBtn" style="width:100%;margin-bottom:12px;">创建房间</button>' : ''}
+                <div style="display:flex;gap:8px;">
+                    <input type="text" id="watchCodeInput" placeholder="输入分享码" maxlength="4" autocomplete="off"
+                           style="flex:1;padding:10px 14px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#fff;font-size:16px;text-transform:uppercase;text-align:center;letter-spacing:4px;outline:none;">
+                    <button class="btn btn-outline" id="watchJoinBtn">加入</button>
+                </div>
+            </div>`;
+
+        if (PD.watchHost) $('#watchCreateBtn').addEventListener('click', createWatchRoom);
+        $('#watchJoinBtn').addEventListener('click', () => {
+            const code = ($('#watchCodeInput')?.value || '').trim().toUpperCase();
+            if (!code) return;
+            joinWatchRoom(code);
+        });
+            const code = ($('#watchCodeInput')?.value || '').trim().toUpperCase();
+            if (!code) return;
+            joinWatchRoom(code);
+        });
+        $('#watchCodeInput')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.isComposing) {
+                const code = (e.target.value || '').trim().toUpperCase();
+                if (code) joinWatchRoom(code);
+            }
+        });
+    }
+
+    function showWatchRoomPanel() {
+        if (!watchModalContent) return;
+        watchModalContent.innerHTML = '<div style="text-align:center;padding:10px 0;color:var(--text-muted);">加载中...</div>';
+        loadWatchRoomInfo();
+    }
+
+    async function loadWatchRoomInfo() {
+        if (!watchRoomId || !watchModalContent) return;
+        try {
+            const res = await fetch(`/api/watch.php?action=room_info&room_id=${watchRoomId}`);
+            const data = await res.json();
+            if (!data.room || watchRoomId !== data.room.id) {
+                watchRoomId = null;
+                showWatchJoinPanel();
+                return;
+            }
+
+            const room = data.room;
+            const members = data.members || [];
+            const hostName = room.host_name || '未知';
+            const isHost = (PD.userId === room.host_user_id);
+            const memberNames = members.map(m => m.display_name || m.username).join('、');
+
+            watchModalContent.innerHTML = `
+                <h3 style="margin-bottom:16px;font-size:18px;">${isHost ? '我的房间' : '一起看'}</h3>
+                <div style="background:rgba(255,255,255,0.04);border-radius:8px;padding:12px 16px;margin-bottom:16px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                        <span style="font-size:13px;color:var(--text-muted);">分享码</span>
+                        <span style="font-size:22px;font-weight:700;letter-spacing:6px;color:#e50914;">${room.code}</span>
+                    </div>
+                    <div style="font-size:12px;color:var(--text-muted);">房主: ${hostName}</div>
+                    <div style="font-size:12px;color:var(--text-muted);">播放: ${room.file_name || ''}</div>
+                </div>
+                <div style="margin-bottom:16px;">
+                    <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">在线成员 (${members.length})</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;" id="watchMembers">
+                        ${members.map(m => `<span style="background:rgba(255,255,255,0.06);padding:4px 10px;border-radius:12px;font-size:12px;">${m.display_name || m.username}${m.id === room.host_user_id ? ' 👑' : ''}</span>`).join('')}
+                    </div>
+                </div>
+                <div style="display:flex;gap:8px;">
+                    ${isHost ? '<button class="btn btn-primary" id="watchSyncBtn" style="flex:1;">同步播放</button>' : ''}
+                    <button class="btn btn-outline" id="watchLeaveBtn" style="flex:1;">退出房间</button>
+                </div>`;
+
+            $('#watchLeaveBtn')?.addEventListener('click', leaveWatchRoom);
+            if (isHost && $('#watchSyncBtn')) {
+                $('#watchSyncBtn').addEventListener('click', () => {
+                    syncWatchState(true);
+                    if (watchModal) watchModal.style.display = 'none';
+                });
+            }
+        } catch (e) {
+            if (watchModalContent) watchModalContent.innerHTML = '<div style="color:#ff6b6b;text-align:center;">加载失败</div>';
+        }
+    }
+
+    async function createWatchRoom() {
+        try {
+            const res = await fetch('/api/watch.php?action=create_room', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file_id: PD.fileId }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                watchRoomId = data.room_id;
+                watchRoomCode = data.code;
+                watchIsHost = true;
+                watchSyncEnabled = true;
+                startWatchPolling();
+                showWatchRoomPanel();
+            } else {
+                alert('创建失败: ' + (data.error || '未知错误'));
+            }
+        } catch (e) {
+            alert('创建失败: 网络错误');
+        }
+    }
+
+    async function joinWatchRoom(code) {
+        try {
+            const res = await fetch('/api/watch.php?action=join_room', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                watchRoomId = data.room.id;
+                watchRoomCode = data.room.code;
+                watchIsHost = (PD.userId === data.room.host_user_id);
+
+                // 如果当前文件和房间文件不一样，跳转过去
+                if (data.room.file_id !== PD.fileId) {
+                    window.location.href = '/player.php?file=' + data.room.file_id + '&watch=' + data.room.code;
+                    return;
+                }
+
+                watchSyncEnabled = true;
+                startWatchPolling();
+                showWatchRoomPanel();
+
+                // 初始同步位置
+                if (!watchIsHost && data.room.current_time > 0) {
+                    video.currentTime = data.room.current_time;
+                    if (data.room.is_playing) video.play();
+                }
+            } else {
+                alert('加入失败: ' + (data.error || '未知错误'));
+            }
+        } catch (e) {
+            alert('加入失败: 网络错误');
+        }
+    }
+
+    async function leaveWatchRoom() {
+        if (!watchRoomId) return;
+        try {
+            await fetch('/api/watch.php?action=leave_room', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ room_id: watchRoomId }),
+            });
+        } catch (e) { /* ignore */ }
+        stopWatchPolling();
+        watchRoomId = null;
+        watchRoomCode = null;
+        watchIsHost = false;
+        watchSyncEnabled = false;
+        if (watchModal) watchModal.style.display = 'none';
+    }
+
+    async function syncWatchState(force) {
+        if (!watchRoomId || !watchIsHost) return;
+        try {
+            await fetch('/api/watch.php?action=sync_state', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    room_id: watchRoomId,
+                    current_time: video.currentTime,
+                    is_playing: video.paused ? 0 : 1,
+                }),
+            });
+        } catch (e) { /* ignore */ }
+    }
+
+    // 房主定时上报
+    function startWatchPolling() {
+        stopWatchPolling();
+        watchSyncEnabled = true;
+        watchPollTimer = setInterval(() => {
+            if (!watchRoomId) { stopWatchPolling(); return; }
+
+            if (watchIsHost) {
+                // 房主上报
+                syncWatchState(false);
+            } else {
+                // 成员拉取状态
+                pollWatchState();
+            }
+        }, 2500);
+    }
+
+    function stopWatchPolling() {
+        if (watchPollTimer) { clearInterval(watchPollTimer); watchPollTimer = null; }
+    }
+
+    async function pollWatchState() {
+        if (!watchRoomId || watchIsHost || !watchSyncEnabled) return;
+        try {
+            const res = await fetch(`/api/watch.php?action=poll_state&room_id=${watchRoomId}`);
+            const data = await res.json();
+            if (!data || data.error) return;
+
+            const remoteTime = data.current_time;
+            const diff = Math.abs(remoteTime - video.currentTime);
+
+            // 只在偏差 > 2秒时同步
+            if (diff > 2) {
+                watchLastRemoteTime = remoteTime;
+                video.currentTime = remoteTime;
+            }
+
+            // 同步播放/暂停
+            if (data.is_playing && video.paused) {
+                video.play().catch(() => {});
+            } else if (!data.is_playing && !video.paused) {
+                video.pause();
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    // 房主端：视频事件自动上报
+    video.addEventListener('play', () => { if (watchIsHost && watchSyncEnabled) syncWatchState(true); });
+    video.addEventListener('pause', () => { if (watchIsHost && watchSyncEnabled) syncWatchState(true); });
+    video.addEventListener('seeked', () => { if (watchIsHost && watchSyncEnabled) syncWatchState(true); });
+
+    // 页面离开时退出房间
+    window.addEventListener('beforeunload', () => {
+        if (watchRoomId) {
+            navigator.sendBeacon('/api/watch.php?action=leave_room', JSON.stringify({ room_id: watchRoomId }));
+        }
+    });
+
+    // 检查URL中是否有watch参数（从邀请链接进入）
+    (function checkWatchParam() {
+        const params = new URLSearchParams(window.location.search);
+        const watchCode = params.get('watch');
+        if (watchCode && PD.userId) {
+            setTimeout(() => {
+                const wm = $('#watchModal');
+                if (wm) wm.style.display = 'flex';
+                joinWatchRoom(watchCode.trim().toUpperCase());
+            }, 1500);
+        }
+    })();
 
     } catch (e) {
         console.error('播放器初始化错误:', e);

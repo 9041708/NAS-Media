@@ -56,6 +56,10 @@ $user = auth()->getUser();
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
                     VIP管理
                 </a>
+                <a href="#collections" class="nav-item" data-tab="collections">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 11H5m14 0a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2m14 0V9a2 2 0 0 0-2-2M5 11V9a2 2 0 0 1 2-2m0 0V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2M7 7h10"/></svg>
+                    合集管理
+                </a>
                 <a href="#activity" class="nav-item" data-tab="activity">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                     活跃会话
@@ -222,6 +226,33 @@ $user = auth()->getUser();
 
                     <div id="vipMediaList" style="max-height:500px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
                         <div style="color:var(--text-muted);padding:20px;text-align:center;font-size:13px;">请选择媒体库后点击"加载列表"</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 合集管理 -->
+            <section class="admin-section" id="tab-collections">
+                <h2>合集管理</h2>
+                <p class="section-desc">管理所有用户的影集合集，可编辑、删除、增减内容</p>
+                <div style="max-width:1000px;">
+                    <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end;">
+                        <div class="form-group" style="flex:1;min-width:180px;">
+                            <label>搜索合集</label>
+                            <input type="text" id="colSearch" placeholder="输入合集名称搜索..." style="width:100%;padding:10px 14px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px;outline:none;">
+                        </div>
+                        <button class="btn btn-primary" id="colSearchBtn">搜索</button>
+                        <button class="btn btn-outline" id="colRefreshBtn">刷新全部</button>
+                    </div>
+
+                    <div style="display:flex;gap:16px;">
+                        <div style="flex:1;max-height:550px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;" id="colList">
+                            <div style="color:var(--text-muted);padding:20px;text-align:center;font-size:13px;">加载中...</div>
+                        </div>
+
+                        <div style="flex:1;max-height:550px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;display:none;" id="colDetailPanel">
+                            <div id="colDetailHeader" style="border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:12px;"></div>
+                            <div id="colDetailItems"></div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -571,6 +602,22 @@ $user = auth()->getUser();
                 <div class="form-group">
                     <label>电影最多播放分钟数（0=不限制）</label>
                     <input type="number" id="groupMovieLimit" value="0" min="0">
+                </div>
+                <div class="form-group" style="border-top:1px solid var(--border);padding-top:16px;margin-top:4px;">
+                    <label style="font-weight:600;font-size:14px;">一起看权限</label>
+                    <small style="color:var(--text-muted);display:block;margin-bottom:12px;">控制该组成员使用同步观影功能的行为</small>
+                    <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+                            <input type="checkbox" id="groupWatchHost" checked> 可创建房间
+                        </label>
+                        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+                            <input type="checkbox" id="groupWatchJoin" checked> 可加入房间
+                        </label>
+                    </div>
+                    <div style="margin-top:8px;">
+                        <label style="font-size:12px;color:var(--text-muted);">房间最大人数（0=不限制）</label>
+                        <input type="number" id="groupWatchMaxGuests" value="0" min="0" max="50" style="width:80px;margin-left:8px;padding:5px 10px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:13px;outline:none;">
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>
