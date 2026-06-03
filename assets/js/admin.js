@@ -408,6 +408,7 @@
     // ===== 元数据管理（树形结构） =====
     let metaData = null;
     let metaExpanded = {};
+    let metaShowingUnmatched = false;
 
     async function loadMetadataTree(search = '', libType = '') {
         try {
