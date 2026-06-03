@@ -173,6 +173,38 @@ $genres = !empty($item['genres']) ? array_map('trim', explode(',', $item['genres
             .cast-card { width:100px; }
             .sim-card { width:120px; }
         }
+
+        .scrape-overlay { display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:3000;justify-content:center;align-items:center;padding:20px;backdrop-filter:blur(6px); }
+        .scrape-overlay.show { display:flex; }
+        .scrape-panel { background:rgba(20,20,45,.98);border:1px solid rgba(255,255,255,.12);border-radius:14px;width:100%;max-width:620px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.7); }
+        .scrape-panel-header { display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid rgba(255,255,255,.08); }
+        .scrape-panel-header h3 { margin:0;font-size:16px;color:#fff; }
+        .scrape-close { background:none;border:none;color:var(--text-muted);font-size:22px;cursor:pointer;padding:0;line-height:1; }
+        .scrape-close:hover { color:#fff; }
+        .scrape-search-row { display:flex;gap:10px;padding:16px 24px; }
+        .scrape-search-row input { flex:1;padding:10px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:8px;color:#fff;font-size:14px;outline:none; }
+        .scrape-search-row input:focus { border-color:var(--accent); }
+        .scrape-search-row button { padding:10px 20px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer;white-space:nowrap; }
+        .scrape-search-row button:hover { background:var(--accent-hover); }
+        .scrape-results { flex:1;overflow-y:auto;padding:0 24px 20px; }
+        .scrape-result-item { display:flex;gap:14px;padding:12px;border-radius:10px;cursor:pointer;transition:background .15s;align-items:center;border:1px solid transparent;margin-bottom:6px; }
+        .scrape-result-item:hover { background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.1); }
+        .scrape-result-item.selected { background:rgba(229,9,20,.12);border-color:rgba(229,9,20,.35); }
+        .scrape-result-item img { width:56px;height:84px;object-fit:cover;border-radius:5px;background:rgba(255,255,255,.04);flex-shrink:0; }
+        .scrape-result-item .sr-info { min-width:0; }
+        .scrape-result-item .sr-title { font-size:14px;color:#fff;font-weight:500;margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+        .scrape-result-item .sr-year { font-size:12px;color:var(--text-muted);margin-bottom:4px; }
+        .scrape-result-item .sr-overview { font-size:11px;color:var(--text-muted);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.5; }
+        .scrape-result-item .sr-rating { font-size:11px;color:#f59e0b;margin-top:2px; }
+        .scrape-footer { display:flex;gap:10px;justify-content:flex-end;padding:16px 24px;border-top:1px solid rgba(255,255,255,.08); }
+        .scrape-footer button { padding:9px 22px;border-radius:8px;font-size:14px;cursor:pointer;border:none; }
+        .scrape-btn-cancel { background:rgba(255,255,255,.08);color:var(--text-secondary); }
+        .scrape-btn-cancel:hover { background:rgba(255,255,255,.14); }
+        .scrape-btn-confirm { background:var(--accent);color:#fff; }
+        .scrape-btn-confirm:hover { background:var(--accent-hover); }
+        .scrape-btn-confirm:disabled { opacity:.5;cursor:not-allowed; }
+        .scrape-loading { text-align:center;padding:40px;color:var(--text-muted);font-size:13px; }
+        .scrape-empty { text-align:center;padding:40px;color:var(--text-muted);font-size:13px; }
     </style>
 </head>
 <body class="<?= themeClass() ?>">
@@ -332,10 +364,37 @@ $genres = !empty($item['genres']) ? array_map('trim', explode(',', $item['genres
     </div>
 </div>
 
+<div class="scrape-overlay" id="scrapeOverlay" onclick="if(event.target===this)closeScrapeModal()">
+    <div class="scrape-panel">
+        <div class="scrape-panel-header">
+            <h3>刮削元数据 — 搜索匹配</h3>
+            <button class="scrape-close" onclick="closeScrapeModal()">&times;</button>
+        </div>
+        <div class="scrape-search-row">
+            <input type="text" id="scrapeSearchInput" placeholder="输入关键词搜索 TMDB..." autofocus>
+            <button onclick="searchTmdbScrape()">搜索</button>
+        </div>
+        <div class="scrape-results" id="scrapeResults">
+            <div class="scrape-empty">输入关键词后点击搜索，选择正确的结果后确认</div>
+        </div>
+        <div class="scrape-footer">
+            <button class="scrape-btn-cancel" onclick="closeScrapeModal()">取消</button>
+            <button class="scrape-btn-confirm" id="scrapeConfirmBtn" disabled onclick="confirmScrape()">确认刮削</button>
+        </div>
+    </div>
+</div>
+
 <script>
 const MEDIA_ID = <?= $id ?>;
 const MEDIA_TYPE = '<?= $item['type'] ?>';
 const TMDB_ID = <?= (int)($item['tmdb_id'] ?? 0) ?>;
+
+document.getElementById('castRow').addEventListener('click', e => {
+    const card = e.target.closest('.cast-card');
+    if (card && card.dataset.actor) {
+        window.location.href = '/actor.php?name=' + encodeURIComponent(card.dataset.actor);
+    }
+});
 
 function playFile(fid) { if(fid) window.open('/player.php?file='+fid, '_blank'); }
 
@@ -401,7 +460,7 @@ async function openTrailer() {
         const row=document.getElementById('castRow');
         if(!cast||!cast.length){row.innerHTML='<div style="color:var(--text-muted);padding:8px;font-size:13px;">暂无双人数据</div>';return;}
         row.innerHTML=cast.map(c=>`
-            <div class="cast-card" onclick="window.location.href='/actor.php?name='+encodeURIComponent(c.name)" style="cursor:pointer;" title="查看 ${esc(c.name)} 的作品">
+            <div class="cast-card" data-actor="${esc(c.name)}" style="cursor:pointer;" title="查看 ${esc(c.name)} 的作品">
                 ${c.profile_path ? '<img src="/api/image.php?size=w185&path='+encodeURIComponent(c.profile_path)+'" loading="lazy" onerror="this.style.display=\'none\'">' : '<div style="width:100%;aspect-ratio:2/3;background:var(--bg-hover);display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--text-muted);">👤</div>'}
                 <div class="cast-name">${esc(c.name)}</div>
                 <div class="cast-role">${esc(c.character||'')}</div>
@@ -472,13 +531,99 @@ async function scanMediaFiles(){
 }
 
 async function scrapeMetadata(){
-    if(!confirm('确定刮削元数据？将从 TMDB 搜索匹配并重新获取完整元数据。'))return;
+    openScrapeModal();
+}
+
+let scrapeSelectedTmdbId = null;
+
+function openScrapeModal() {
+    scrapeSelectedTmdbId = null;
+    document.getElementById('scrapeSearchInput').value = '<?= addcslashes($item['original_title'] ?: $item['title'], "'") ?>';
+    document.getElementById('scrapeResults').innerHTML = '<div class="scrape-empty">输入关键词后点击搜索，选择正确的结果后确认</div>';
+    document.getElementById('scrapeConfirmBtn').disabled = true;
+    document.getElementById('scrapeOverlay').classList.add('show');
+    setTimeout(() => document.getElementById('scrapeSearchInput').select(), 100);
+}
+
+function closeScrapeModal() {
+    document.getElementById('scrapeOverlay').classList.remove('show');
+}
+
+function onScrapeSearchKey(e) {
+    if (e.key === 'Enter') searchTmdbScrape();
+}
+
+document.getElementById('scrapeSearchInput').addEventListener('keydown', onScrapeSearchKey);
+
+async function searchTmdbScrape() {
+    const query = document.getElementById('scrapeSearchInput').value.trim();
+    if (!query) return;
+    const resultsDiv = document.getElementById('scrapeResults');
+    const confirmBtn = document.getElementById('scrapeConfirmBtn');
+    scrapeSelectedTmdbId = null;
+    confirmBtn.disabled = true;
+    resultsDiv.innerHTML = '<div class="scrape-loading">搜索中...</div>';
     try {
-        const r=await fetch('/api/media.php?action=scrape_meta',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({media_id:MEDIA_ID})});
-        const d=await r.json();
-        if(d.success){alert('刮削成功，页面即将刷新');setTimeout(()=>location.reload(),1000);}
-        else alert('刮削失败: ' + (d.error || '未知错误'));
-    } catch(e) { alert('刮削失败: 网络错误 - ' + e.message); }
+        const type = MEDIA_TYPE === 'tv' ? 'tv' : 'movie';
+        const r = await fetch('/api/media.php?action=search_tmdb&q=' + encodeURIComponent(query) + '&type=' + type);
+        const results = await r.json();
+        if (!results.length || results.error) {
+            resultsDiv.innerHTML = '<div class="scrape-empty">未找到结果，请修改关键词重试</div>';
+            return;
+        }
+        let html = '';
+        results.forEach(res => {
+            html += '<div class="scrape-result-item" data-tmdb="' + res.tmdb_id + '" onclick="selectScrapeResult(this, ' + res.tmdb_id + ')">';
+            if (res.poster_path) {
+                html += '<img src="/api/image.php?size=w92&path=' + encodeURIComponent(res.poster_path) + '" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 150%22><rect fill=%22%23111%22 width=%22100%22 height=%22150%22/><text x=%2250%22 y=%2280%22 fill=%22%23555%22 text-anchor=%22middle%22 font-size=%2214%22>无图</text></svg>\'" loading="lazy">';
+            } else {
+                html += '<div style="width:56px;height:84px;background:rgba(255,255,255,.04);border-radius:5px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--text-muted);">🎬</div>';
+            }
+            html += '<div class="sr-info">';
+            html += '<div class="sr-title">' + esc(res.title) + '</div>';
+            html += '<div class="sr-year">' + (res.year || '未知年份') + '</div>';
+            if (res.rating) html += '<div class="sr-rating">★ ' + parseFloat(res.rating).toFixed(1) + '</div>';
+            html += '<div class="sr-overview">' + esc((res.overview || '').substring(0, 150)) + '</div>';
+            html += '</div></div>';
+        });
+        resultsDiv.innerHTML = html;
+    } catch(e) {
+        resultsDiv.innerHTML = '<div class="scrape-empty">搜索失败: ' + e.message + '</div>';
+    }
+}
+
+function selectScrapeResult(el, tmdbId) {
+    scrapeSelectedTmdbId = tmdbId;
+    document.querySelectorAll('.scrape-result-item').forEach(item => item.classList.remove('selected'));
+    el.classList.add('selected');
+    document.getElementById('scrapeConfirmBtn').disabled = false;
+}
+
+async function confirmScrape() {
+    if (!scrapeSelectedTmdbId) return;
+    const confirmBtn = document.getElementById('scrapeConfirmBtn');
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '写入中...';
+    try {
+        const r = await fetch('/api/media.php?action=match_media', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ media_id: MEDIA_ID, tmdb_id: scrapeSelectedTmdbId }),
+        });
+        const d = await r.json();
+        if (d.success) {
+            closeScrapeModal();
+            location.reload();
+        } else {
+            alert('刮削失败: ' + (d.error || '未知错误'));
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = '确认刮削';
+        }
+    } catch(e) {
+        alert('刮削失败: 网络错误 - ' + e.message);
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = '确认刮削';
+    }
 }
 
 document.getElementById('logoutBtn')?.addEventListener('click',async e=>{e.preventDefault();await fetch('/api/auth.php?action=logout');location.href='/index.php';});

@@ -115,7 +115,14 @@ CREATE TABLE `media_items` (
     KEY `idx_type` (`type`),
     KEY `idx_vip` (`vip_only`),
     KEY `idx_title` (`title`(191)),
-    KEY `idx_year` (`year`)
+    KEY `idx_year` (`year`),
+    KEY `idx_created_at` (`created_at`),
+    KEY `idx_rating` (`rating`),
+    KEY `idx_play_count` (`play_count`),
+    KEY `idx_type_created` (`type`, `created_at`),
+    KEY `idx_type_rating` (`type`, `rating`),
+    FULLTEXT KEY `idx_title_ft` (`title`),
+    FULLTEXT KEY `idx_cast_ft` (`cast_list`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -163,6 +170,10 @@ CREATE TABLE `play_history` (
     PRIMARY KEY (`id`),
     KEY `idx_user` (`user_id`),
     KEY `idx_media` (`media_id`),
+    KEY `idx_played_at` (`played_at`),
+    KEY `idx_file_id` (`file_id`),
+    KEY `idx_user_completed` (`user_id`, `media_id`, `completed`),
+    KEY `idx_user_played` (`user_id`, `media_id`, `played_at`),
     CONSTRAINT `fk_history_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_history_media` FOREIGN KEY (`media_id`) REFERENCES `media_items` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -387,7 +398,7 @@ INSERT INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('remote_access_enabled', '0'),
 ('default_user_group', '1'),
 ('scan_interval', '3600'),
-('db_version', '2'),
+('db_version', '3'),
 ('ffmpeg_path', 'ffmpeg'),
 ('ffprobe_path', 'ffprobe'),
 ('transcode_enabled', '0'),

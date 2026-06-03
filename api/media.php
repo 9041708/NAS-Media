@@ -215,19 +215,54 @@ try {
             try {
                 $libraries = db()->fetchAll("SELECT * FROM libraries WHERE enabled = 1 ORDER BY COALESCE(sort_order, 0) ASC, name ASC");
 
+                if (empty($libraries)) {
+                    jsonResponse([]);
+                    break;
+                }
+
+                $libIds = array_column($libraries, 'id');
+                $placeholders = implode(',', array_fill(0, count($libIds), '?'));
+
+                $allItems = db()->fetchAll(
+                    "SELECT mi.id, mi.title, mi.type, mi.year, mi.poster_path, mi.rating, mi.genres, mf.library_id
+                     FROM media_items mi
+                     JOIN media_files mf ON mf.media_id = mi.id
+                     WHERE mf.library_id IN ($placeholders)
+                     ORDER BY mf.library_id, mi.created_at DESC",
+                    $libIds
+                );
+
+                $grouped = [];
+                foreach ($allItems as $item) {
+                    $lid = (int)$item['library_id'];
+                    if (!isset($grouped[$lid])) {
+                        $grouped[$lid] = [];
+                    }
+                    if (count($grouped[$lid]) >= 12) {
+                        continue;
+                    }
+                    $mediaId = (int)$item['id'];
+                    if (isset($grouped[$lid][$mediaId])) {
+                        continue;
+                    }
+                    $grouped[$lid][$mediaId] = [
+                        'id' => $mediaId,
+                        'title' => $item['title'],
+                        'type' => $item['type'],
+                        'year' => $item['year'],
+                        'poster_path' => $item['poster_path'],
+                        'rating' => $item['rating'],
+                        'genres' => $item['genres'],
+                    ];
+                }
+
                 $result = [];
                 foreach ($libraries as $lib) {
-                    $items = db()->fetchAll(
-                        "SELECT mi.id, mi.title, mi.type, mi.year, mi.poster_path, mi.rating, mi.genres
-                        FROM media_items mi 
-                        WHERE EXISTS (SELECT 1 FROM media_files mf WHERE mf.media_id = mi.id AND mf.library_id = ?)
-                        ORDER BY mi.created_at DESC 
-                        LIMIT 12",
-                        [$lib['id']]
-                    );
+                    $lid = (int)$lib['id'];
+                    $items = array_values($grouped[$lid] ?? []);
                     if (!empty($items)) {
                         $result[] = [
-                            'library_id' => (int)$lib['id'],
+                            'library_id' => $lid,
                             'library_name' => $lib['name'],
                             'library_type' => $lib['type'],
                             'items' => $items,
@@ -324,18 +359,25 @@ try {
 
         case 'search_tmdb':
             $query = $_GET['q'] ?? '';
+            $type = $_GET['type'] ?? 'movie';
             if (empty($query)) jsonResponse(['error' => '请输入搜索词'], 400);
 
-            $results = tmdb()->searchMovie($query);
-            $formatted = array_map(function($r) {
+            if ($type === 'tv') {
+                $results = tmdb()->searchTv($query);
+            } else {
+                $results = tmdb()->searchMovie($query);
+            }
+
+            $formatted = array_map(function($r) use ($type) {
                 return [
-                    'tmdb_id'     => $r['id'],
-                    'title'       => $r['title'] ?? '',
-                    'original_title' => $r['original_title'] ?? '',
-                    'year'        => !empty($r['release_date']) ? (int)substr($r['release_date'], 0, 4) : null,
-                    'poster_path' => $r['poster_path'] ?? null,
-                    'overview'    => $r['overview'] ?? '',
-                    'rating'      => $r['vote_average'] ?? 0,
+                    'tmdb_id'        => $r['id'],
+                    'title'          => $r['title'] ?? $r['name'] ?? '',
+                    'original_title' => $r['original_title'] ?? $r['original_name'] ?? '',
+                    'year'           => !empty($r['release_date'] ?? $r['first_air_date'] ?? '') ? (int)substr($r['release_date'] ?? $r['first_air_date'], 0, 4) : null,
+                    'poster_path'    => $r['poster_path'] ?? null,
+                    'overview'       => $r['overview'] ?? '',
+                    'rating'         => $r['vote_average'] ?? 0,
+                    'media_type'     => $r['media_type'] ?? $type,
                 ];
             }, array_slice($results, 0, 10));
 
@@ -362,6 +404,7 @@ try {
 
                 $mediaData = tmdb()->formatMovieData($details);
                 db()->update('media_items', $mediaData, 'id = ?', [$mediaId]);
+                metaCacheClear($mediaId);
                 jsonResponse(['success' => true, 'media_id' => $mediaId]);
                 break;
             }
@@ -376,6 +419,7 @@ try {
 
             if ($existingMedia) {
                 db()->update('media_files', ['media_id' => $existingMedia['id']], 'id = ?', [$fileId]);
+                metaCacheClear($existingMedia['id']);
                 $mediaId = $existingMedia['id'];
             } else {
                 $mediaId = db()->insert('media_items', $mediaData);
@@ -644,13 +688,19 @@ try {
             if (!$mediaId) jsonResponse(['error' => '缺少ID'], 400);
             $media = db()->fetchOne('SELECT tmdb_id, type FROM media_items WHERE id = ?', [$mediaId]);
             if (!$media || !$media['tmdb_id']) jsonResponse([]);
+            $cached = metaCacheGet($mediaId, 'credits');
+            if ($cached !== null) { jsonResponse($cached); break; }
             $cast = tmdb()->getCastPhotos((int)$media['tmdb_id'], $media['type']);
+            if (!empty($cast)) metaCacheSet($mediaId, 'credits', $cast);
             jsonResponse($cast);
             break;
 
         case 'show_similar':
             $mediaId = (int)($_GET['id'] ?? 0);
             if (!$mediaId) jsonResponse([]);
+            $cached = metaCacheGet($mediaId, 'similar');
+            if ($cached !== null) { jsonResponse($cached); break; }
+
             $media = db()->fetchOne('SELECT * FROM media_items WHERE id = ?', [$mediaId]);
             if (!$media) jsonResponse([]);
 
@@ -707,7 +757,9 @@ try {
                 }
             }
 
-            jsonResponse(array_slice($localItems, 0, 20));
+            $result = array_slice($localItems, 0, 20);
+            metaCacheSet($mediaId, 'similar', $result);
+            jsonResponse($result);
             break;
 
         case 'show_season':
@@ -716,7 +768,11 @@ try {
             if (!$mediaId) jsonResponse(['error' => '缺少ID'], 400);
             $media = db()->fetchOne('SELECT tmdb_id FROM media_items WHERE id = ?', [$mediaId]);
             if (!$media || !$media['tmdb_id']) jsonResponse(null);
+            $cacheKey = 'season_' . $seasonNum;
+            $cached = metaCacheGet($mediaId, $cacheKey);
+            if ($cached !== null) { jsonResponse($cached); break; }
             $season = tmdb()->getSeasonDetails((int)$media['tmdb_id'], $seasonNum);
+            if (!empty($season)) metaCacheSet($mediaId, $cacheKey, $season);
             jsonResponse($season);
             break;
 
@@ -853,6 +909,7 @@ try {
                 $data['title'] = $title;
             }
             db()->update('media_items', $data, 'id = ?', [$mediaId]);
+            metaCacheClear($mediaId);
 
             jsonResponse(['success' => true, 'tmdb_id' => $data['tmdb_id'] ?? null]);
             break;

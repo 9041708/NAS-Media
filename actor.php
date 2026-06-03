@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/Database.php';
+require_once __DIR__ . '/includes/TmdbApi.php';
 require_once __DIR__ . '/includes/Auth.php';
 require_once __DIR__ . '/includes/session.php';
 
@@ -32,10 +33,21 @@ if ($person) {
     }
 }
 
-$localMedia = db()->fetchAll(
-    "SELECT * FROM media_items WHERE cast_list LIKE ? AND EXISTS (SELECT 1 FROM media_files mf WHERE mf.media_id = media_items.id) ORDER BY rating DESC LIMIT 50",
-    ["%$name%"]
-);
+$localMedia = [];
+try {
+    $localMedia = db()->fetchAll(
+        "SELECT * FROM media_items WHERE MATCH(cast_list) AGAINST(? IN BOOLEAN MODE) AND EXISTS (SELECT 1 FROM media_files mf WHERE mf.media_id = media_items.id) ORDER BY rating DESC LIMIT 50",
+        [$name]
+    );
+} catch (Exception $e) {
+    // FULLTEXT 索引不存在时回退到 LIKE
+}
+if (empty($localMedia)) {
+    $localMedia = db()->fetchAll(
+        "SELECT * FROM media_items WHERE cast_list LIKE ? AND EXISTS (SELECT 1 FROM media_files mf WHERE mf.media_id = media_items.id) ORDER BY rating DESC LIMIT 50",
+        ["%$name%"]
+    );
+}
 
 $movies = array_filter($localMedia, fn($m) => $m['type'] === 'movie');
 $tvShows = array_filter($localMedia, fn($m) => $m['type'] === 'tv');

@@ -40,6 +40,7 @@ try {
 
             try {
                 $success = scanner()->refreshMetadata($mediaId);
+                if ($success) metaCacheClear($mediaId);
                 jsonResponse(['success' => $success]);
             } catch (Exception $e) {
                 jsonResponse(['success' => false, 'error' => $e->getMessage()], 500);

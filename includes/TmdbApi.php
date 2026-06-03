@@ -206,6 +206,8 @@ class TmdbApi
         $year = null;
         if (!empty($tmdbData['release_date'])) {
             $year = (int) substr($tmdbData['release_date'], 0, 4);
+        } elseif (!empty($tmdbData['first_air_date'])) {
+            $year = (int) substr($tmdbData['first_air_date'], 0, 4);
         }
 
         return [
@@ -220,7 +222,7 @@ class TmdbApi
             'rating'        => $tmdbData['vote_average'] ?? null,
             'vote_count'    => $tmdbData['vote_count'] ?? 0,
             'genres'        => implode(',', $genres),
-            'release_date'  => $tmdbData['release_date'] ?? null,
+            'release_date'  => $tmdbData['release_date'] ?? $tmdbData['first_air_date'] ?? null,
             'runtime'       => $tmdbData['runtime'] ?? null,
             'language'      => $tmdbData['original_language'] ?? null,
             'country'       => !empty($tmdbData['production_countries'])

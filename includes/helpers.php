@@ -166,3 +166,37 @@ function themeClass(): string
     $theme = getSetting('theme', 'dark');
     return $theme === 'light' ? 'light-theme' : 'dark-theme';
 }
+
+function metaCacheGet(int $mediaId, string $key): ?array
+{
+    $dir = __DIR__ . '/../data/metacache';
+    if (!is_dir($dir)) return null;
+    $file = $dir . '/' . $mediaId . '_' . $key . '.json';
+    if (!file_exists($file)) return null;
+    if (time() - filemtime($file) > 86400) {
+        @unlink($file);
+        return null;
+    }
+    $data = json_decode(file_get_contents($file), true);
+    return is_array($data) ? $data : null;
+}
+
+function metaCacheSet(int $mediaId, string $key, array $data): void
+{
+    $dir = __DIR__ . '/../data/metacache';
+    if (!is_dir($dir)) {
+        mkdir($dir, 0755, true);
+    }
+    $file = $dir . '/' . $mediaId . '_' . $key . '.json';
+    file_put_contents($file, json_encode($data, JSON_UNESCAPED_UNICODE));
+}
+
+function metaCacheClear(int $mediaId): void
+{
+    $dir = __DIR__ . '/../data/metacache';
+    if (!is_dir($dir)) return;
+    $files = glob($dir . '/' . $mediaId . '_*.json');
+    foreach ($files as $f) {
+        @unlink($f);
+    }
+}
