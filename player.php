@@ -142,7 +142,7 @@ $siteName = getSetting('site_name', 'NAS影库');
 
         <!-- 视频区 -->
         <div class="video-area" id="videoArea">
-            <video id="videoPlayer" preload="auto" autoplay muted playsinline>
+            <video id="videoPlayer" preload="auto" autoplay playsinline>
                 <source src="/api/stream.php?id=<?= $fileId ?>" type="<?= getVideoMimeType($file['file_type']) ?>">
             </video>
 
@@ -192,35 +192,6 @@ $siteName = getSetting('site_name', 'NAS影库');
             <!-- 弹幕层 -->
             <canvas class="danmaku-canvas" id="danmakuCanvas"></canvas>
 
-            <!-- 弹幕输入 -->
-            <div class="danmaku-input" id="danmakuInput" style="display:none;">
-                <input type="text" id="danmakuText" placeholder="发送弹幕..." maxlength="100">
-                <select id="danmakuColor" title="颜色">
-                    <option value="#ffffff">⚪</option>
-                    <option value="#ff4444">🔴</option>
-                    <option value="#44ff44">🟢</option>
-                    <option value="#4444ff">🔵</option>
-                    <option value="#ffff44">🟡</option>
-                    <option value="#ff44ff">🟣</option>
-                </select>
-                <select id="danmakuType" title="类型">
-                    <option value="scroll">滚动</option>
-                    <option value="top">顶部</option>
-                    <option value="bottom">底部</option>
-                </select>
-                <button id="danmakuSend">发送</button>
-                <span style="color:rgba(255,255,255,0.3);font-size:11px;margin-left:4px;white-space:nowrap;">回车发送</span>
-            </div>
-
-            <!-- B站弹幕导入 -->
-            <div class="danmaku-import" id="danmakuImport" style="display:none;position:absolute;bottom:130px;left:50%;transform:translateX(-50%);z-index:60;">
-                <div style="display:flex;gap:6px;padding:8px 10px;background:rgba(251,114,153,0.15);border:1px solid rgba(251,114,153,0.3);border-radius:8px;align-items:center;">
-                    <span style="font-size:12px;color:#fb7299;white-space:nowrap;">B站导入</span>
-                    <input type="text" id="bilibiliCid" placeholder="输入B站视频cid" style="width:120px;padding:4px 8px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:4px;color:#fff;font-size:12px;outline:none;">
-                    <button id="bilibiliImportBtn" style="padding:4px 10px;background:#fb7299;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;white-space:nowrap;">导入</button>
-                </div>
-            </div>
-
             <!-- B站弹幕导入 -->
             <div class="danmaku-import" id="danmakuImport" style="display:none;position:absolute;bottom:130px;left:50%;transform:translateX(-50%);z-index:60;">
                 <div style="display:flex;gap:6px;padding:8px 10px;background:rgba(251,114,153,0.15);border:1px solid rgba(251,114,153,0.3);border-radius:8px;align-items:center;">
@@ -257,17 +228,16 @@ $siteName = getSetting('site_name', 'NAS影库');
                 </div>
 
                 <!-- 弹幕发送栏 -->
-                <div class="danmaku-bar" id="danmakuBar" style="display:none;">
+                <div class="danmaku-bar" id="danmakuBar">
                     <div class="danmaku-bar-row">
-                        <span class="danmaku-bar-label">弹幕</span>
                         <input type="text" id="danmakuText" placeholder="发个弹幕吧~" maxlength="100" autocomplete="off">
                         <select id="danmakuColor" title="颜色" class="danmaku-bar-sel">
                             <option value="#ffffff">⚪</option>
-                            <option value="#ff4444" style="color:#ff4444">🔴</option>
-                            <option value="#44ff44" style="color:#44ff44">🟢</option>
-                            <option value="#4444ff" style="color:#4444ff">🔵</option>
-                            <option value="#ffff44" style="color:#ffff44">🟡</option>
-                            <option value="#ff44ff" style="color:#ff44ff">🟣</option>
+                            <option value="#ff4444">🔴</option>
+                            <option value="#44ff44">🟢</option>
+                            <option value="#4444ff">🔵</option>
+                            <option value="#ffff44">🟡</option>
+                            <option value="#ff44ff">🟣</option>
                         </select>
                         <select id="danmakuType" title="类型" class="danmaku-bar-sel">
                             <option value="scroll">滚动</option>
@@ -275,9 +245,9 @@ $siteName = getSetting('site_name', 'NAS影库');
                             <option value="bottom">底部</option>
                         </select>
                         <button id="danmakuSend" class="danmaku-bar-send">发送</button>
+                        <button id="danmakuImportToggle" class="danmaku-bar-send" style="background:rgba(251,114,153,0.25);font-size:11px;" title="B站导入">＋B站</button>
                     </div>
-                    <div class="danmaku-bar-import" id="danmakuBarImport">
-                        <span style="font-size:11px;color:#fb7299;white-space:nowrap;">B站导入</span>
+                    <div class="danmaku-bar-import" id="danmakuBarImport" style="display:none;">
                         <input type="text" id="bilibiliUrl" placeholder="输入B站视频链接自动解析..." autocomplete="off">
                         <button id="bilibiliImportBtn">导入弹幕</button>
                     </div>
@@ -360,6 +330,7 @@ $siteName = getSetting('site_name', 'NAS影库');
                         <div class="audio-control">
                             <button class="ctrl-btn" id="audioBtn" title="音轨">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+                                <span style="font-size:11px;margin-left:2px;">音轨</span>
                             </button>
                             <div class="audio-menu" id="audioMenu">
                                 <?php if (count($audioTracks) > 0): ?>
@@ -373,7 +344,7 @@ $siteName = getSetting('site_name', 'NAS影库');
                                         </div>
                                     <?php endforeach; ?>
                                 <?php else: ?>
-                                    <div class="audio-option" style="color:var(--text-muted);cursor:default;">未检测到音轨</div>
+                                    <div class="audio-option" style="color:var(--text-muted);cursor:default;">未检测到音轨（需扫描媒体库）</div>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -382,6 +353,7 @@ $siteName = getSetting('site_name', 'NAS影库');
                         <div class="sub-control">
                             <button class="ctrl-btn" id="subBtn" title="字幕">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="14" x2="23" y2="14"/></svg>
+                                <span style="font-size:11px;margin-left:2px;">字幕</span>
                             </button>
                             <div class="sub-menu" id="subMenu">
                                 <div class="sub-option active" data-track-id="off">关闭</div>
@@ -419,38 +391,13 @@ $siteName = getSetting('site_name', 'NAS影库');
                                             <span class="q-status">等待中</span>
                                         <?php elseif ($q['status'] === 'failed'): ?>
                                             <span class="q-status">失败</span>
-    <!-- 字幕搜索弹窗 -->
-    <div class="modal-overlay" id="subSearchModal">
-        <div class="modal-content" style="max-width:600px;max-height:80vh;overflow-y:auto;background:rgba(20,20,40,0.98);">
-            <button class="modal-close" id="closeSubSearch">&times;</button>
-            <div style="padding:24px;">
-                <h3 style="margin-bottom:16px;font-size:18px;">搜索字幕</h3>
-                <div style="display:flex;gap:8px;margin-bottom:16px;">
-                    <select id="subSearchLang" style="padding:8px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:13px;">
-                        <option value="zh">中文</option>
-                        <option value="en">英文</option>
-                        <option value="ja">日文</option>
-                        <option value="ko">韩文</option>
-                    </select>
-                    <button class="btn btn-primary" id="subSearchDoBtn" style="flex:1;">搜索</button>
-                </div>
-                <div id="subSearchResults" style="margin-top:12px;"></div>
-                <div style="margin-top:16px;border-top:1px solid rgba(255,255,255,0.1);padding-top:12px;">
-                    <p style="font-size:12px;color:var(--text-muted);">或粘贴字幕直链下载:</p>
-                    <div style="display:flex;gap:8px;margin-top:8px;">
-                        <input type="text" id="subDirectUrl" placeholder="https://example.com/subtitle.srt" style="flex:1;padding:8px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:13px;outline:none;">
-                        <button class="btn btn-outline" id="subDirectDownloadBtn">下载</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    <?php endif; ?>
+                                        <?php endif; ?>
+                                    </div>
                                 <?php endforeach; ?>
                             </div>
                         </div>
 
-                        <!-- 画中画 -->
+    <!-- 画中画 -->
                         <button class="ctrl-btn" id="pipBtn" title="画中画">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><rect x="12" y="9" width="8" height="7" rx="1" fill="currentColor" opacity="0.5"/></svg>
                         </button>
@@ -488,6 +435,42 @@ $siteName = getSetting('site_name', 'NAS影库');
         watchJoin: <?= json_encode(($user && $group) ? ($permissions['watch_can_join'] ?? false) : true) ?>,
     };
     </script>
+
+    <!-- 一起看弹窗 -->
+    <div class="modal-overlay" id="watchModal" style="display:none;">
+        <div class="modal-content" style="max-width:440px;background:rgba(20,20,40,0.98);">
+            <button class="modal-close" onclick="closeWatchModal()">&times;</button>
+            <div style="padding:24px;" id="watchModalContent"></div>
+        </div>
+    </div>
+
+    <!-- 字幕搜索弹窗 -->
+    <div class="modal-overlay" id="subSearchModal">
+        <div class="modal-content" style="max-width:600px;max-height:80vh;overflow-y:auto;background:rgba(20,20,40,0.98);">
+            <button class="modal-close" id="closeSubSearch">&times;</button>
+            <div style="padding:24px;">
+                <h3 style="margin-bottom:16px;font-size:18px;">搜索字幕</h3>
+                <div style="display:flex;gap:8px;margin-bottom:16px;">
+                    <select id="subSearchLang" style="padding:8px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:13px;">
+                        <option value="zh">中文</option>
+                        <option value="en">英文</option>
+                        <option value="ja">日文</option>
+                        <option value="ko">韩文</option>
+                    </select>
+                    <button class="btn btn-primary" id="subSearchDoBtn" style="flex:1;">搜索</button>
+                </div>
+                <div id="subSearchResults" style="margin-top:12px;"></div>
+                <div style="margin-top:16px;border-top:1px solid rgba(255,255,255,0.1);padding-top:12px;">
+                    <p style="font-size:12px;color:var(--text-muted);">或粘贴字幕直链下载:</p>
+                    <div style="display:flex;gap:8px;margin-top:8px;">
+                        <input type="text" id="subDirectUrl" placeholder="https://example.com/subtitle.srt" style="flex:1;padding:8px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:13px;outline:none;">
+                        <button class="btn btn-outline" id="subDirectDownloadBtn">下载</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="/assets/js/player.js"></script>
     <script src="/assets/js/notify.js"></script>
     <script>
@@ -537,16 +520,6 @@ $siteName = getSetting('site_name', 'NAS影库');
         });
     })();
     </script>
-
-    <!-- 一起看弹窗 -->
-    <div class="modal-overlay" id="watchModal" style="display:none;">
-        <div class="modal-content" style="max-width:440px;background:rgba(20,20,40,0.98);">
-            <button class="modal-close" onclick="closeWatchModal()">&times;</button>
-            <div style="padding:24px;" id="watchModalContent">
-                <!-- 动态内容由JS填充 -->
-            </div>
-        </div>
-    </div>
 
     <?php endif; ?>
 </body>

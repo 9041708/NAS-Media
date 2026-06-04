@@ -80,6 +80,10 @@ class MediaScanner
                     if ($existing) {
                         $this->db->update('media_files', $fileInfo, 'id = ?', [$existing['id']]);
                         $results['updated']++;
+                        try {
+                            $this->saveStreamTracks($existing['id'], $filePath);
+                        } catch (Exception $e) {
+                        }
                     } else {
                         $fileInfo['library_id'] = $libraryId;
                         $fileId = $this->db->insert('media_files', $fileInfo);

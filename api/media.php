@@ -704,39 +704,44 @@ try {
             $media = db()->fetchOne('SELECT * FROM media_items WHERE id = ?', [$mediaId]);
             if (!$media) jsonResponse([]);
 
-            $where = ['mi.id != ?'];
+            $conditions = [];
             $params = [(int)$mediaId];
-            $recipe = [];
 
             if (!empty($media['genres'])) {
                 foreach (explode(',', $media['genres']) as $g) {
                     $g = trim($g);
-                    if ($g) { $where[] = 'mi.genres LIKE ?'; $params[] = "%$g%"; }
+                    if ($g) {
+                        $conditions[] = 'mi.genres LIKE ?';
+                        $params[] = "%$g%";
+                    }
                 }
-                $recipe[] = '同类型';
             }
             if (!empty($media['cast_list'])) {
                 $castNames = array_slice(array_map('trim', explode(',', $media['cast_list'])), 0, 3);
                 foreach ($castNames as $cn) {
-                    if ($cn) { $where[] = 'mi.cast_list LIKE ?'; $params[] = "%$cn%"; }
+                    if ($cn) {
+                        $conditions[] = 'mi.cast_list LIKE ?';
+                        $params[] = "%$cn%";
+                    }
                 }
-                $recipe[] = '同演员';
             }
 
-            $whereClause = implode(' OR ', $where);
-            $localItems = db()->fetchAll(
-                "SELECT mi.id, mi.title, mi.type, mi.poster_path, mi.year, mi.rating,
-                    (SELECT COUNT(DISTINCT ci.collection_id) FROM collection_items ci WHERE ci.media_id = mi.id) as in_collections,
-                    (SELECT COUNT(*) FROM (SELECT 1 FROM media_items mi2 WHERE mi2.id != ? AND (
-                        " . implode(' OR ', array_slice($where, 1)) . "
-                    ) LIMIT 10) sub) as score
-                FROM media_items mi
-                WHERE ($whereClause)
-                AND EXISTS (SELECT 1 FROM media_files mf WHERE mf.media_id = mi.id)
-                ORDER BY score DESC
-                LIMIT 20",
-                array_merge([(int)$mediaId], $params)
-            );
+            if (!empty($conditions)) {
+                $whereClause = implode(' OR ', $conditions);
+                $localItems = db()->fetchAll(
+                    "SELECT mi.id, mi.title, mi.type, mi.poster_path, mi.year, mi.rating,
+                        (SELECT COUNT(DISTINCT ci.collection_id) FROM collection_items ci WHERE ci.media_id = mi.id) as in_collections
+                    FROM media_items mi
+                    WHERE mi.id != ?
+                    AND ($whereClause)
+                    AND EXISTS (SELECT 1 FROM media_files mf WHERE mf.media_id = mi.id)
+                    ORDER BY mi.rating DESC, mi.year DESC
+                    LIMIT 20",
+                    $params
+                );
+            } else {
+                $localItems = [];
+            }
 
             if (count($localItems) < 6 && $media['tmdb_id']) {
                 $tmdbSimilar = tmdb()->getSimilar((int)$media['tmdb_id'], $media['type']);

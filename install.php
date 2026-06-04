@@ -111,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $adminUsername = $adminUsername ?: 'admin';
                 $adminPass = $adminPass ?: 'admin123';
                 $hashedPass = password_hash($adminPass, PASSWORD_DEFAULT);
-                $stmt = $pdo->prepare("INSERT INTO users (username, password, display_name, role) VALUES (?, ?, ?, 'admin')");
+                $stmt = $pdo->prepare("INSERT INTO users (username, password, display_name, role, group_id) VALUES (?, ?, ?, 'admin', 3)");
                 $stmt->execute([$adminUsername, $hashedPass, $adminUsername]);
 
                 $stmt = $pdo->prepare("UPDATE settings SET setting_value = ? WHERE setting_key = 'site_name'");

@@ -104,14 +104,14 @@ $genres = !empty($item['genres']) ? array_map('trim', explode(',', $item['genres
         .show-topbar .back-btn:hover { color:#ccc; }
 
         .show-backdrop { width:100%;height:55vh;min-height:360px;overflow:hidden;position:relative; }
-        .show-backdrop img,.show-backdrop .bk-fb { width:100%;height:100%;object-fit:cover;display:block; }
-        .show-backdrop::after { content:'';position:absolute;inset:0;background:linear-gradient(0deg,var(--bg-primary) 0%,transparent 50%,rgba(0,0,0,.2) 100%);pointer-events:none; }
+        .show-backdrop img,.show-backdrop .bk-fb { width:100%;height:100%;object-fit:cover;display:block; filter:brightness(0.72); }
+        .show-backdrop::after { content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,10,18,0.78) 0%,rgba(8,10,18,0.2) 45%,rgba(8,10,18,0.95) 100%);pointer-events:none; }
 
-        .show-header { position:relative;z-index:2;margin-top:-130px;padding:0 40px 20px;display:flex;gap:32px;max-width:1280px;margin-left:auto;margin-right:auto; }
-        .show-poster { flex-shrink:0;width:210px;border-radius:12px;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.65); }
+        .show-header { position:relative;z-index:2;margin-top:-140px;padding:30px 40px 28px;display:flex;gap:32px;max-width:1280px;margin-left:auto;margin-right:auto;background:rgba(9,11,18,0.8);backdrop-filter:blur(18px);border-radius:30px;box-shadow:0 40px 120px rgba(0,0,0,.36); }
+        .show-poster { flex-shrink:0;width:240px;border-radius:18px;overflow:hidden;box-shadow:0 20px 70px rgba(0,0,0,.55); }
         .show-poster img { width:100%;aspect-ratio:2/3;object-fit:cover;display:block; }
-        .show-info { flex:1;padding-top:12px;min-width:0; }
-        .show-info h1 { font-size:34px;color:#fff;margin:0 0 6px;line-height:1.3; }
+        .show-info { flex:1;padding-top:18px;min-width:0; display:flex;flex-direction:column;gap:20px; }
+        .show-info h1 { font-size:42px;color:#fff;margin:0;line-height:1.12; }
         .show-original { font-size:15px;color:var(--text-muted);margin-bottom:6px; }
         .show-meta { display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;font-size:13px;color:var(--text-secondary); }
         .show-meta .dot { color:var(--text-muted); }
@@ -508,16 +508,24 @@ function toggleMore() {
 document.addEventListener('click',e=>{if(!e.target.closest('.more-menu'))document.getElementById('moreDropdown')?.classList.remove('show');});
 
 async function openTrailer() {
-    if(!TMDB_ID) return;
+    if(!TMDB_ID) { alert('暂无预告片'); return; }
     try {
         const r = await fetch('/api/media.php?action=show_trailer&id='+MEDIA_ID);
         const videos = await r.json();
-        const trailer = Array.isArray(videos) && videos.find(v=>v.type==='Trailer'&&v.site==='YouTube') || (Array.isArray(videos) && videos[0]);
-        if(trailer) {
+        const trailer = Array.isArray(videos) && videos.find(v=>v.type==='Trailer'&&v.site==='YouTube') || (Array.isArray(videos) && videos.find(v=>v.site==='YouTube') && videos.find(v=>v.site==='YouTube')) || (Array.isArray(videos) && videos[0]);
+        if(trailer && trailer.key) {
             document.getElementById('trailerFrame').src='https://www.youtube.com/embed/'+trailer.key+'?autoplay=1&rel=0';
             document.getElementById('trailerOverlay').classList.add('show');
-        } else { alert('暂无预告片'); }
-    } catch(e) { alert('暂无预告片'); }
+        } else {
+            const title = document.querySelector('.detail-title')?.textContent?.trim() || '';
+            const year = document.querySelector('.detail-meta')?.textContent?.match(/\d{4}/)?.[0] || '';
+            const q = encodeURIComponent(title + (year ? ' '+year : '') + ' 官方预告片');
+            document.getElementById('trailerFrame').src='https://www.youtube.com/embed?listType=search&list='+q+'&autoplay=1';
+            document.getElementById('trailerOverlay').classList.add('show');
+        }
+    } catch(e) {
+        alert('预告片加载失败');
+    }
 }
 
 <?php if ($item['tmdb_id'] && $item['type'] === 'tv'): ?>

@@ -1050,7 +1050,7 @@
             groups.forEach(g => groupMap[g.id] = g.name);
 
             list.innerHTML = users.map(u => {
-                const groupName = groupMap[u.group_id] || '普通用户';
+                const groupName = u.role === 'admin' ? '管理员' : (groupMap[u.group_id] || '普通用户');
                 return `<div class="library-card" data-id="${u.id}">
                     <div class="lib-info">
                         <div class="lib-name">${escHtml(u.display_name || u.username)} ${u.role === 'admin' ? '<span class="admin-badge" style="font-size:11px;margin-left:8px;">管理员</span>' : ''}</div>
@@ -1195,6 +1195,8 @@
 
             $$('.delete-group-btn').forEach(btn => {
                 btn.addEventListener('click', async () => {
+                    const g = groups.find(x => x.id == btn.dataset.id);
+                    if (g && g.name === '管理员') { toast('管理员组不能删除', 'error'); return; }
                     if (!confirm('确定删除此权限组？组内用户将变为普通用户组。')) return;
                     await api('/api/auth.php?action=delete_group', { method: 'POST', body: JSON.stringify({ id: parseInt(btn.dataset.id) }) });
                     toast('已删除');

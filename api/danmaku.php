@@ -4,7 +4,8 @@ require_once __DIR__ . '/bootstrap.php';
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
 
-$userId = $_SESSION['user_id'] ?? 0;
+$user = auth()->getUser();
+$userId = $user ? (int)$user['id'] : 0;
 if (!$userId) jsonResponse(['error' => '请先登录'], 401);
 
 try {

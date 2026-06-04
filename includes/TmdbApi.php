@@ -284,6 +284,10 @@ class TmdbApi
 
         $data = json_decode($response, true);
         if ($data) {
+            $results = $data['results'] ?? null;
+            if ($results !== null && count($results) === 0) {
+                return $data;
+            }
             if (!is_dir(__DIR__ . '/../cache')) {
                 mkdir(__DIR__ . '/../cache', 0755, true);
             }

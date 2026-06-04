@@ -26,6 +26,7 @@
 - 新增 `migrations/3_perf_indexes.sql` - 性能索引
 - 新增 `migrations/4_collections.sql` - 合集表迁移
 - 新增 `migrations/5_watch_together.sql` - 一起看表迁移
+- 新增 `migrations/6_admin_group.sql` - 管理员权限组迁移
 - 更新 `api/media.php` - 新增 `admin_list_collections`/`admin_collection_items`/`update_collection`/`delete_collection`/`remove_from_collection`/`add_media_to_collection`
 - 更新 `api/transcode.php` - `multi_hls` 单音轨兼容性检测 + AAC转码
 - 更新 `admin/index.php` - 合集管理标签页、权限组编辑新增一起看权限区域

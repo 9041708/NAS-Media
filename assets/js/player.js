@@ -14,6 +14,11 @@
     const topbar = $('#playerTopbar');
     const progressBar = $('#progressBar');
     const progressContainer = $('#progressContainer');
+
+    if (video) {
+        video.muted = false;
+        video.volume = 1;
+    }
     const progressBuffer = $('#progressBuffer');
     const progressThumb = $('#progressThumb');
     const progressTooltip = $('#progressTooltip');
@@ -210,20 +215,8 @@
     updateVolumeIcon();
 
     const unmuteHint = $('#unmuteHint');
-    if (unmuteHint && video.muted) {
-        unmuteHint.style.display = 'block';
-        const onUnmute = (e) => {
-            e.stopPropagation();
-            video.muted = false;
-            video.play();
-            updateVolumeIcon();
-            unmuteHint.style.display = 'none';
-            video.removeEventListener('click', onUnmute);
-            unmuteHint.removeEventListener('click', onUnmute);
-        };
-        video.addEventListener('click', onUnmute);
-        unmuteHint.addEventListener('click', onUnmute);
-        setTimeout(() => { if (unmuteHint.style.display !== 'none') unmuteHint.style.display = 'none'; }, 8000);
+    if (unmuteHint) {
+        unmuteHint.style.display = 'none';
     }
 
     // ===== 倍速 =====
@@ -1141,16 +1134,13 @@
     function toggleDanmaku() {
         danmakuEnabled = !danmakuEnabled;
         if (danmakuEnabled) {
-            danmakuBar.style.display = '';
-            danmakuLabel.style.color = 'var(--accent)';
+            danmakuLabel.style.color = '#fb7299';
             danmakuCanvas.style.display = 'block';
             danmakuData.forEach(d => d._spawned = false);
             danmakuPool = [];
             if (!danmakuAnimId) renderDanmakuFrame();
             if (!danmakuLoadTimer) startDanmakuPolling();
-            setTimeout(() => danmakuText?.focus(), 100);
         } else {
-            danmakuBar.style.display = 'none';
             danmakuLabel.style.color = '';
             danmakuCanvas.style.display = 'none';
             if (danmakuAnimId) { cancelAnimationFrame(danmakuAnimId); danmakuAnimId = null; }
@@ -1191,15 +1181,21 @@
                 danmakuText.value = '';
                 danmakuText.focus();
             } else {
-                danmakuText.style.borderColor = '#ff6b6b';
-                setTimeout(() => { danmakuText.style.borderColor = ''; }, 1500);
+                showDanmakuError(data.error || '发送失败');
             }
         } catch (e) {
-            danmakuText.style.borderColor = '#ff6b6b';
-            setTimeout(() => { danmakuText.style.borderColor = ''; }, 1500);
+            showDanmakuError('网络错误');
         }
         danmakuSend.disabled = false;
         danmakuSend.textContent = '发送';
+    }
+
+    function showDanmakuError(msg) {
+        const tip = document.createElement('div');
+        tip.textContent = msg;
+        tip.style.cssText = 'position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:6px;padding:4px 10px;background:#e50914;color:#fff;font-size:11px;border-radius:4px;white-space:nowrap;z-index:999;';
+        danmakuBar.querySelector('.danmaku-bar-row').appendChild(tip);
+        setTimeout(() => tip.remove(), 3000);
     }
 
     if (danmakuCanvas) {
@@ -1215,6 +1211,13 @@
 
         const bilibiliImportBtn = $('#bilibiliImportBtn');
         const bilibiliUrl = $('#bilibiliUrl');
+        const danmakuImportToggle = $('#danmakuImportToggle');
+        if (danmakuImportToggle) {
+            danmakuImportToggle.addEventListener('click', () => {
+                const bar = $('#danmakuBarImport');
+                if (bar) bar.style.display = bar.style.display === 'none' ? 'flex' : 'none';
+            });
+        }
         if (bilibiliImportBtn && bilibiliUrl) {
             bilibiliImportBtn.addEventListener('click', () => bilibiliImport(bilibiliUrl.value.trim()));
             bilibiliUrl.addEventListener('keydown', (e) => {
@@ -1447,22 +1450,29 @@
                 </div>
             </div>`;
 
-        if (PD.watchHost) $('#watchCreateBtn').addEventListener('click', createWatchRoom);
-        $('#watchJoinBtn').addEventListener('click', () => {
-            const code = ($('#watchCodeInput')?.value || '').trim().toUpperCase();
-            if (!code) return;
-            joinWatchRoom(code);
-        });
-            const code = ($('#watchCodeInput')?.value || '').trim().toUpperCase();
-            if (!code) return;
-            joinWatchRoom(code);
-        });
-        $('#watchCodeInput')?.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.isComposing) {
-                const code = (e.target.value || '').trim().toUpperCase();
-                if (code) joinWatchRoom(code);
-            }
-        });
+        if (PD.watchHost) {
+            const createBtn = $('#watchCreateBtn');
+            if (createBtn) createBtn.addEventListener('click', createWatchRoom);
+        }
+
+        const joinBtn = $('#watchJoinBtn');
+        if (joinBtn) {
+            joinBtn.addEventListener('click', () => {
+                const code = ($('#watchCodeInput')?.value || '').trim().toUpperCase();
+                if (!code) return;
+                joinWatchRoom(code);
+            });
+        }
+
+        const codeInput = $('#watchCodeInput');
+        if (codeInput) {
+            codeInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.isComposing) {
+                    const code = (e.target.value || '').trim().toUpperCase();
+                    if (code) joinWatchRoom(code);
+                }
+            });
+        }
     }
 
     function showWatchRoomPanel() {

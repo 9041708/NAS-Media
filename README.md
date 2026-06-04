@@ -126,7 +126,8 @@ docker-compose up -d
 │   ├── 2_danmaku.sql
 │   ├── 3_perf_indexes.sql
 │   ├── 4_collections.sql
-│   └── 5_watch_together.sql
+│   ├── 5_watch_together.sql
+│   └── 6_admin_group.sql
 ├── assets/
 │   ├── css/
 │   │   ├── style.css       # 主样式 (移动端汉堡菜单/响应式)
@@ -206,6 +207,7 @@ docker-compose up -d
 - `3_perf_indexes` — 性能索引
 - `4_collections` — 合集表
 - `5_watch_together` — 一起看表
+- `6_admin_group` — 管理员权限组
 
 ## 一起看（同步观影）
 

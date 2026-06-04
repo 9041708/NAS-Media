@@ -5,6 +5,25 @@ require_once __DIR__ . '/includes/Auth.php';
 require_once __DIR__ . '/includes/session.php';
 header('Content-Type: application/json; charset=utf-8');
 
+function ensureNotificationsTable(): void
+{
+    db()->query(
+        "CREATE TABLE IF NOT EXISTS `notifications` (
+            `id` int(11) NOT NULL AUTO_INCREMENT,
+            `target_user_id` int(11) DEFAULT NULL COMMENT 'NULL=全局广播',
+            `from_user_id` int(11) NOT NULL,
+            `message` text NOT NULL,
+            `type` enum('info','warning','success') NOT NULL DEFAULT 'info',
+            `delivered` tinyint(1) NOT NULL DEFAULT 0,
+            `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_target` (`target_user_id`),
+            KEY `idx_delivered` (`delivered`),
+            KEY `idx_created` (`created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+}
+
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
 
@@ -13,6 +32,7 @@ try {
         case 'send':
             if ($method !== 'POST') jsonResponse(['error' => '方法不允许'], 405);
             auth()->requireAdmin();
+            ensureNotificationsTable();
 
             $input = json_decode(file_get_contents('php://input'), true);
             $message = trim($input['message'] ?? '');
@@ -41,6 +61,7 @@ try {
         case 'poll':
             $userId = $_SESSION['user_id'] ?? 0;
             if (!$userId) jsonResponse(['error' => '未登录'], 401);
+            ensureNotificationsTable();
 
             $messages = db()->fetchAll(
                 "SELECT id, message, type, created_at FROM notifications
@@ -66,6 +87,7 @@ try {
         case 'clear':
             $userId = $_SESSION['user_id'] ?? 0;
             if (!$userId) jsonResponse(['error' => '未登录'], 401);
+            ensureNotificationsTable();
 
             db()->query(
                 "UPDATE notifications SET delivered = 1 WHERE target_user_id = ? OR target_user_id IS NULL",
